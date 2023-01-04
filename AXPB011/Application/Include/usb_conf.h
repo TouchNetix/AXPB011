@@ -36,9 +36,8 @@
 /*******************************************************************************
  * Conditional Compilation Flags
  ******************************************************************************/
-//#define USE_HOST_MODE
 #define USE_DEVICE_MODE
-//#define USE_OTG_MODE
+#define USE_IRC48M
 
 #ifndef USE_DEVICE_MODE
 #ifndef USE_HOST_MODE

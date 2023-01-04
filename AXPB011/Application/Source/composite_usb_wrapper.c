@@ -65,10 +65,10 @@
 #define USBD_VID                (0x28E9U)   // Gigadevice VID
 #define USBD_PID                (0x0000U)   // Updated during init
 
-#define DEVICE_FW_VERSION_MAJOR (0x00U)
-#define DEVICE_FW_VERSION_MINOR (0x01U)
+#define DEVICE_FW_VERSION_MAJOR (0x01U)
+#define DEVICE_FW_VERSION_MINOR (0x00U)
 
-#define DEVICE_FW_VERSION       ((uint16_t)((DEVICE_FW_VERSION_MINOR < 8U) | (DEVICE_FW_VERSION_MAJOR)))
+#define DEVICE_FW_VERSION       ((uint16_t)((DEVICE_FW_VERSION_MAJOR << 8U) | (DEVICE_FW_VERSION_MINOR)))
 
 #define USB_ATTR_RESERVED       (1U << 7U)
 #define USB_ATTR_BUS_POWERED    (0U << 6U)
@@ -93,7 +93,7 @@ __ALIGN_BEGIN usb_desc_dev composite_dev_desc __ALIGN_END = {
     .bMaxPacketSize0       = USB_FS_EP0_MAX_LEN,
     .idVendor              = USBD_VID,
     .idProduct             = USBD_PID,
-    .bcdDevice             = DEVICE_FW_VERSION,
+    .bcdDevice             = DEVICE_FW_VERSION, //DEVICE_FW_VERSION
     .iManufacturer         = STR_IDX_MFC,
     .iProduct              = STR_IDX_PRODUCT,
     .iSerialNumber         = STR_IDX_SERIAL,

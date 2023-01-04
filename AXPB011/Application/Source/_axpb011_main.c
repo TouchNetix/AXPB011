@@ -264,7 +264,6 @@ static void RunProxy(usb_dev *udev, uint8_t *USBControl, uint8_t *USBPress, uint
             }
 
             PrepareControlUSBReport(ProxyReport, USBControl);
-            MoveCircularBufferHead();
 
             break;
         }

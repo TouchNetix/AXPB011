@@ -339,10 +339,10 @@ void WakeHost(usb_core_driver *udev)
 static void resume_mcu_clk(void)
 {
     /* enable HSE */
-    rcu_osci_on(RCU_HXTAL);
+    rcu_osci_on(RCU_IRC8M);
 
     /* wait till HSE is ready */
-    while(RESET == rcu_flag_get(RCU_FLAG_HXTALSTB)) {
+    while(RESET == rcu_flag_get(RCU_FLAG_IRC8MSTB)) {
     }
 
     /* enable PLL */

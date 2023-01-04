@@ -86,10 +86,6 @@ void RestartBridge(usb_core_driver *udev)
 void EnterBootloader(usb_core_driver *udev)
 {
     DeviceDeInit(udev, IRQ_UNCHANGED);
-
-    // Write a magic word at the end of RAM - checked by the boot-loader
-    *((unsigned long *)0x20001FF0) = 0xDEADBEEF;
-
     JumpToFlashStart();
 }
 
@@ -98,13 +94,8 @@ void EnterBootloader(usb_core_driver *udev)
  ******************************************************************************/
 static void JumpToFlashStart(void)
 {
-    // Set PC to reset vector.
-    uint32_t app_addr = *(__IO uint32_t*) (FLASH_START_ADDR + 4U);
-    app_func application = (app_func) app_addr;
+    // Write a magic word at the end of RAM - checked by the boot-loader
+    *((unsigned long *)0x20001FF0) = 0xDEADBEEF;
 
-    // Initialise user application's stack pointer.
-    __set_MSP(*(__IO uint32_t*) FLASH_START_ADDR);
-
-    // Jump to user application.
-    application();
+    ob_reset(); // Can re-use this to create a reset
 }

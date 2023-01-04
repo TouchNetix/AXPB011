@@ -121,10 +121,10 @@ void SPI_Init(void)
     spi_struct_para_init(&spi_init_struct);
 
     // Configure the SPI parameters
-    // SPI0 is connected to APB2. The system clock is running at 96 MHz (off an 8 MHz HXTAL).
+    // SPI0 is connected to APB2. The system clock is running at 96 MHz.
     // APB2 = SYSCLK/4 = 24 MHz.
-    // SPI speed = APB2/4 = 6 MHz
-    spi_init_struct.prescale                = SPI_PSC_4;
+    // SPI speed = APB2/8 = 3 MHz
+    spi_init_struct.prescale                = SPI_PSC_8;
     spi_init_struct.device_mode             = SPI_MASTER;
     spi_init_struct.trans_mode              = SPI_TRANSMODE_FULLDUPLEX;
     spi_init_struct.frame_size              = SPI_FRAMESIZE_8BIT;

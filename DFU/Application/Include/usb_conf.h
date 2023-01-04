@@ -42,9 +42,8 @@
  *  The USE_EMBEDDED_PHY symbol is defined in the project compiler preprocessor
  *  when FS core is used.
 *******************************************************************************/
-//#define USE_HOST_MODE
 #define USE_DEVICE_MODE
-//#define USE_OTG_MODE
+#define USE_IRC48M
 
 #ifndef USE_DEVICE_MODE
 #ifndef USE_HOST_MODE

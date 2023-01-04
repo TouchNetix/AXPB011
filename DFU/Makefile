@@ -140,7 +140,7 @@ LDFLAGS		:=	$(MCU)	\
 help:	## Show this help.
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
 
-all: compile link
+all: compile link	## Compiles and links the project.
 
 compile: $(APP_OBJS) $(GD32F350_OBJS) $(STDPERIPHS_OBJ) $(USB_DEV_DFU_OBJ) $(USB_DFU_OBJ) $(USB_DEV_CORE_OBJ) $(USB_DRIVER_OBJ) $(PLAT_OBJ) $(OBJS)  ## Creates folders and compiles source.
 

@@ -68,8 +68,8 @@
 //#define __SYSTEM_CLOCK_72M_PLL_IRC8M_DIV2    (uint32_t)(72000000)
 //#define __SYSTEM_CLOCK_84M_PLL_HXTAL         (uint32_t)(84000000)
 //#define __SYSTEM_CLOCK_84M_PLL_IRC8M_DIV2    (uint32_t)(84000000)
-#define __SYSTEM_CLOCK_96M_PLL_HXTAL         (uint32_t)(96000000)
-//#define __SYSTEM_CLOCK_96M_PLL_IRC8M_DIV2      (uint32_t)(96000000)
+//#define __SYSTEM_CLOCK_96M_PLL_HXTAL         (uint32_t)(96000000)
+#define __SYSTEM_CLOCK_96M_PLL_IRC8M_DIV2      (uint32_t)(96000000)
 //#define __SYSTEM_CLOCK_96M_PLL_IRC48M_DIV2     (uint32_t)(96000000)
 //#define __SYSTEM_CLOCK_108M_PLL_HXTAL        (uint32_t)(108000000)
 //#define __SYSTEM_CLOCK_108M_PLL_IRC8M_DIV2   (uint32_t)(108000000)
@@ -141,6 +141,7 @@ static void system_clock_config(void);
 void SystemInit(void)
 {
 #if (defined(GD32F350))
+
     RCU_APB2EN |= BIT(0);
     CMP_CS |= (CMP_CS_CMP1MSEL | CMP_CS_CMP0MSEL);
 #endif /* GD32F350 */
@@ -575,8 +576,8 @@ static void system_clock_96m_irc8m(void)
 {
     /* AHB = SYSCLK */
     RCU_CFG0 |= RCU_AHB_CKSYS_DIV1;
-    /* APB2 = AHB/2 */
-    RCU_CFG0 |= RCU_APB2_CKAHB_DIV2;
+    /* APB2 = AHB/4 */
+    RCU_CFG0 |= RCU_APB2_CKAHB_DIV4;
     /* APB1 = AHB/2 */
     RCU_CFG0 |= RCU_APB1_CKAHB_DIV2;
     /* PLL = (IRC8M/2) * 24 = 96 MHz */

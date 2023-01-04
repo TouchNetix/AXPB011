@@ -42,6 +42,12 @@ OF SUCH DAMAGE.
 #define USBD_VID                     0x28E9U
 #define USBD_PID                     0x0189U
 
+// XXX Bootloader version
+#define DEVICE_FW_VERSION_MAJOR (0x01U)
+#define DEVICE_FW_VERSION_MINOR (0x00U)
+
+#define DEVICE_FW_VERSION       ((uint16_t)((DEVICE_FW_VERSION_MAJOR << 8U) | (DEVICE_FW_VERSION_MINOR)))
+
 /* local function prototypes ('static') */
 static uint8_t dfu_init(usb_dev *udev, uint8_t config_index);
 static uint8_t dfu_deinit(usb_dev *udev, uint8_t config_index);
@@ -82,7 +88,7 @@ const usb_desc_dev dfu_dev_desc = {
     .bMaxPacketSize0       = USB_FS_EP0_MAX_LEN,
     .idVendor              = USBD_VID,
     .idProduct             = USBD_PID,
-    .bcdDevice             = 0x0100U,
+    .bcdDevice             = DEVICE_FW_VERSION,
     .iManufacturer         = STR_IDX_MFC,
     .iProduct              = STR_IDX_PRODUCT,
     .iSerialNumber         = STR_IDX_SERIAL,
