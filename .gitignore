@@ -57,7 +57,7 @@ Thumbs.db
 *.project
 *.cproject
 */bins/
-/.settings/
+*/.settings/
 AXPB011/Documents/html/
 AXPB011/Documents/latex/
 
