@@ -41,12 +41,17 @@
 /*******************************************************************************
  * File Scope Conditional Compilation Flags
  ******************************************************************************/
-#define I2C_PERIPH  I2C0
+
 
 /*******************************************************************************
  * File Scope Data Types
  ******************************************************************************/
-
+typedef enum
+{
+    eI2C_OK         = 0,
+    eI2C_FAIL       = 1,
+    eI2C_TIMEOUT    = 2,
+} en_i2cStatus;
 
 /*******************************************************************************
  * Exported Variables
@@ -66,7 +71,8 @@ static uint32_t g_axiom_i2c_addr = 0;
 /*******************************************************************************
  * File Scope Constants
  ******************************************************************************/
-
+#define I2C_PERIPH      (I2C0)
+#define I2C_TIMEOUT_MS  (10U)
 
 /*******************************************************************************
  * File Scope Macros
@@ -78,12 +84,14 @@ static uint32_t g_axiom_i2c_addr = 0;
 
 #define I2C_FASTMODE            (400000U)
 #define MAX_ADDRSEND_ATTEMPTS   (4U)
-#define EEPROM_ADDRESS          (0xA0 >> 1U)
+#define EEPROM_ADDRESS          (0xA0U >> 1U)
 #define NUM_CMD_BYTES           (4U)
 #define USB_MAX_DATA_SIZE       (58U)   // max usb packet size (64) minus 2 bridge header bytes and 4 axiom command bytes
 #define I2C_TXRX_BUFFER_SIZE    (NUM_CMD_BYTES + USB_MAX_DATA_SIZE)
 #define WRITE                   (0x00U)
 #define READ                    (0x80U)
+#define ADDSEND_DONTCLEAR       (0)
+#define ADDSEND_CLEAR           (1U)
 
 /*******************************************************************************
  * File Scope Inline Functions
@@ -93,11 +101,12 @@ static uint32_t g_axiom_i2c_addr = 0;
 /*******************************************************************************
  * File Scope Function Prototypes
  ******************************************************************************/
-static void     I2C_Transmit(uint8_t *pdata, uint32_t length);
-static void     I2C_Receive(uint8_t *pbuf, uint32_t length);
-static void     I2C_PinConfig(void);
-static void     SetI2CAddress(uint32_t addr);
-static uint32_t FindI2CAddress(void);
+static void         I2C_Transmit(uint8_t *pdata, uint32_t length);
+static void         I2C_Receive(uint8_t *pbuf, uint32_t length);
+static en_i2cStatus I2C_SendAddress(uint32_t read_write, uint8_t clear_addsend, uint32_t timeout_period);
+static void         I2C_PinConfig(void);
+static void         SetI2CAddress(uint32_t addr);
+static uint32_t     FindI2CAddress(void);
 
 /*******************************************************************************
  * Exported Function Definitions
@@ -172,7 +181,7 @@ void I2C_WriteAxiom(uint8_t pagenum, uint8_t offset, uint8_t *pbuf, uint32_t len
 
     // Send a stop condition to I2C bus and wait for stop condition to be generated
     i2c_stop_on_bus(I2C_PERIPH);
-    while (I2C_CTL0(I2C_PERIPH) & 0x0200)
+    while (I2C_CTL0(I2C_PERIPH) & I2C_CTL0_STOP)
     {
         continue;
     }
@@ -232,13 +241,18 @@ uint32_t I2C_GetI2CAddress(void)
 static void I2C_Transmit(uint8_t *pbuf, uint32_t length)
 {
     // Send slave address to I2C bus
-    i2c_master_addressing(I2C_PERIPH, I2C_GetI2CAddress(), I2C_TRANSMITTER);
-    while (!i2c_flag_get(I2C_PERIPH, I2C_FLAG_ADDSEND))
+    if (I2C_SendAddress(I2C_TRANSMITTER, ADDSEND_CLEAR, I2C_TIMEOUT_MS) != eI2C_OK)
     {
-        continue;
-    }
+        // Target device not present/responsive
+        // Send a stop condition to I2C bus and wait for stop condition to be generated
+        i2c_stop_on_bus(I2C_PERIPH);
+        while (I2C_CTL0(I2C_PERIPH) & I2C_CTL0_STOP)
+        {
+            continue;
+        }
 
-    i2c_flag_clear(I2C_PERIPH, I2C_FLAG_ADDSEND);
+        return;
+    }
 
     // Wait until the transmit data buffer is empty
     while (!i2c_flag_get(I2C_PERIPH, I2C_FLAG_TBE))
@@ -268,50 +282,15 @@ static void I2C_Receive(uint8_t *pbuf, uint32_t length)
     if (length == 0)
     {
         // Do nothing
+        return;
     }
-    else if (length == 1)
+    else
     {
-        // Repeated start
-        i2c_start_on_bus(I2C_PERIPH);
-        while (!i2c_flag_get(I2C_PERIPH, I2C_FLAG_SBSEND))
+        if (length == 2U)
         {
-            continue;
+            // Configure ACKEN to control whether send ACK/NACK for the next byte, rather than the current one
+            i2c_ackpos_config(I2C_PERIPH, I2C_ACKPOS_NEXT);
         }
-
-        // Send slave address to I2C bus
-        i2c_master_addressing(I2C_PERIPH, I2C_GetI2CAddress(), I2C_RECEIVER);
-        while (!i2c_flag_get(I2C_PERIPH, I2C_FLAG_ADDSEND))
-        {
-            continue;
-        }
-
-        // Disable acknowledge before clearing ADDSEND flag
-        i2c_ack_config(I2C_PERIPH, I2C_ACK_DISABLE);
-        i2c_flag_clear(I2C_PERIPH, I2C_FLAG_ADDSEND);
-
-        // Send a stop condition to I2C bus and wait for stop condition to be generated
-        i2c_stop_on_bus(I2C_PERIPH);
-        while (I2C_CTL0(I2C_PERIPH) & 0x0200)
-        {
-            continue;
-        }
-
-        // Wait until the RBNE bit is set
-        while (!i2c_flag_get(I2C_PERIPH, I2C_FLAG_RBNE))
-        {
-            continue;
-        }
-
-        // Read data from I2C_DATA
-        pbuf[0] = i2c_data_receive(I2C_PERIPH);
-
-        // Enable acknowledge
-        i2c_ack_config(I2C_PERIPH, I2C_ACK_ENABLE);
-    }
-    else if (length == 2)
-    {
-        // Configure ACKEN to control whether send ACK/NACK for the next byte, rather than the current one
-        i2c_ackpos_config(I2C_PERIPH, I2C_ACKPOS_NEXT);
 
         // Repeated start
         i2c_start_on_bus(I2C_PERIPH);
@@ -320,95 +299,166 @@ static void I2C_Receive(uint8_t *pbuf, uint32_t length)
             continue;
         }
 
-        // Send slave address to I2C bus
-        i2c_master_addressing(I2C_PERIPH, I2C_GetI2CAddress(), I2C_RECEIVER);
-        while (!i2c_flag_get(I2C_PERIPH, I2C_FLAG_ADDSEND))
+        // Send slave address to I2C bus but don't clear the address sent flag yet
+        if (I2C_SendAddress(I2C_RECEIVER, ADDSEND_DONTCLEAR, I2C_TIMEOUT_MS) != eI2C_OK)
         {
-            continue;
+            // Target device not present/responsive
+            // Send a stop condition to I2C bus and wait for stop condition to be generated
+            i2c_stop_on_bus(I2C_PERIPH);
+            while (I2C_CTL0(I2C_PERIPH) & I2C_CTL0_STOP)
+            {
+                continue;
+            }
+
+            return;
         }
 
-        // Disable acknowledge before clearing ADDSEND flag
-        i2c_ack_config(I2C_PERIPH, I2C_ACK_DISABLE);
+        // Disable acknowledge before clearing ADDSEND flag if doing a short read
+        if ((length == 1U) || (length == 2U))
+        {
+            i2c_ack_config(I2C_PERIPH, I2C_ACK_DISABLE);
+        }
+
         i2c_flag_clear(I2C_PERIPH, I2C_FLAG_ADDSEND);
 
-        // Wait for BTC to be set - indicates byte to receive but rx buffer is full
-        while (!i2c_flag_get(I2C_PERIPH, I2C_FLAG_BTC))
+        if (length == 1U)
         {
-            continue;
-        }
+            // Send a stop condition to I2C bus and wait for stop condition to be generated
+            i2c_stop_on_bus(I2C_PERIPH);
+            while (I2C_CTL0(I2C_PERIPH) & I2C_CTL0_STOP)
+            {
+                continue;
+            }
 
-        // Send a stop condition to I2C bus and wait for stop condition to be generated
-        i2c_stop_on_bus(I2C_PERIPH);
-        while (I2C_CTL0(I2C_PERIPH) & 0x0200)
-        {
-            continue;
-        }
-
-        // Read out the 2 data bytes
-        for (uint32_t i = 0; i < length; i++)
-        {
             // Wait until the RBNE bit is set
             while (!i2c_flag_get(I2C_PERIPH, I2C_FLAG_RBNE))
             {
                 continue;
             }
 
-            // Read a byte from I2C_DATA
-            pbuf[i] = i2c_data_receive(I2C_PERIPH);
-        }
-    }
-    else
-    {
-        // Repeated start
-        i2c_start_on_bus(I2C_PERIPH);
-        while (!i2c_flag_get(I2C_PERIPH, I2C_FLAG_SBSEND))
-        {
-            continue;
-        }
+            // Read data from I2C_DATA
+            pbuf[0] = i2c_data_receive(I2C_PERIPH);
 
-        // Send slave address to I2C bus
-        i2c_master_addressing(I2C_PERIPH, I2C_GetI2CAddress(), I2C_RECEIVER);
-        while (!i2c_flag_get(I2C_PERIPH, I2C_FLAG_ADDSEND))
-        {
-            continue;
+            // Re-Enable acknowledge
+            i2c_ack_config(I2C_PERIPH, I2C_ACK_ENABLE);
         }
-
-        i2c_flag_clear(I2C_PERIPH, I2C_FLAG_ADDSEND);
-
-        for (uint32_t i = 0; i < length; i++)
+        else if (length == 2U)
         {
-            if (i == (length - 3))
+            // Wait for BTC to be set - indicates byte to receive but rx buffer is full
+            while (!i2c_flag_get(I2C_PERIPH, I2C_FLAG_BTC))
             {
-                // Wait until the (length - 2) data byte is received into the shift register
-                while (!i2c_flag_get(I2C_PERIPH, I2C_FLAG_BTC))
+                continue;
+            }
+
+            // Send a stop condition to I2C bus and wait for stop condition to be generated
+            i2c_stop_on_bus(I2C_PERIPH);
+            while (I2C_CTL0(I2C_PERIPH) & I2C_CTL0_STOP)
+            {
+                continue;
+            }
+
+            // Read out the 2 data bytes
+            for (uint32_t i = 0; i < length; i++)
+            {
+                // Wait until the RBNE bit is set
+                while (!i2c_flag_get(I2C_PERIPH, I2C_FLAG_RBNE))
                 {
                     continue;
                 }
 
-                // Disable acknowledge
-                i2c_ack_config(I2C_PERIPH, I2C_ACK_DISABLE);
+                // Read a byte from I2C_DATA
+                pbuf[i] = i2c_data_receive(I2C_PERIPH);
             }
 
-            // Wait until the RBNE bit is set
-            while (!i2c_flag_get(I2C_PERIPH, I2C_FLAG_RBNE))
+            // Revert ACKEN back to control whether send ACK/NACK for the CURRENT byte
+            i2c_ackpos_config(I2C_PERIPH, I2C_ACKPOS_CURRENT);
+
+            // Re-Enable acknowledge
+            i2c_ack_config(I2C_PERIPH, I2C_ACK_ENABLE);
+        }
+        else
+        {
+            for (uint32_t i = 0; i < length; i++)
+            {
+                if (i == (length - 3U))
+                {
+                    // Wait until the (length - 2) data byte is received into the shift register
+                    while (!i2c_flag_get(I2C_PERIPH, I2C_FLAG_BTC))
+                    {
+                        continue;
+                    }
+
+                    // Disable acknowledge
+                    i2c_ack_config(I2C_PERIPH, I2C_ACK_DISABLE);
+                }
+
+                // Wait until the RBNE bit is set
+                while (!i2c_flag_get(I2C_PERIPH, I2C_FLAG_RBNE))
+                {
+                    continue;
+                }
+
+                // Read a byte from I2C_DATA
+                pbuf[i] = i2c_data_receive(I2C_PERIPH);
+            }
+
+            // Re-Enable acknowledge
+            i2c_ack_config(I2C_PERIPH, I2C_ACK_ENABLE);
+
+            // Send a stop condition to I2C bus and wait for stop condition to be generated
+            i2c_stop_on_bus(I2C_PERIPH);
+            while (I2C_CTL0(I2C_PERIPH) & I2C_CTL0_STOP)
             {
                 continue;
             }
-
-            // Read a byte from I2C_DATA
-            pbuf[i] = i2c_data_receive(I2C_PERIPH);
-        }
-
-        // Enable acknowledge
-        i2c_ack_config(I2C_PERIPH, I2C_ACK_ENABLE);
-
-        // Send a stop condition to I2C bus and wait for stop condition to be generated
-        i2c_stop_on_bus(I2C_PERIPH);
-        while (I2C_CTL0(I2C_PERIPH) & 0x0200)
-        {
-            continue;
         }
     }
+}
+
+/**
+ * @brief   Sends a slave address to the I2C bus. If the timeout is reached, the function will return
+ * @param[in]   read_write      Write or read from target device.
+ *                              Must be one of the following arguments:
+ * @arg                             I2C_TRANSMITTER - Write
+ * @arg                             I2C_RECEIVER - Read
+ * @param[in]   timeout         Time in milliseconds the function will wait for the slave to acknowledge the address.
+ * @param[in]   clear_addsend   Select if address sent flag is cleared in the function or not:
+ * @arg                             ADDSEND_CLEAR - Address sent flag is cleared.
+ * @arg                             Any other value - Address sent flag is not cleared.
+ * @retval  I2C status: eI2C_TIMEOUT or eI2C_OK.
+ */
+static en_i2cStatus I2C_SendAddress(uint32_t read_write, uint8_t clear_addsend, uint32_t timeout_period)
+{
+    uint32_t timeout_counter = 0;
+    en_i2cStatus status = eI2C_FAIL;
+
+    i2c_master_addressing(I2C_PERIPH, I2C_GetI2CAddress(), read_write);
+
+    // Wait for slave to acknowledge the address (address sent flag raised) or the timeout period to elapse
+    while ((!i2c_flag_get(I2C_PERIPH, I2C_FLAG_ADDSEND)) && (timeout_counter < timeout_period))
+    {
+        delay_1ms(1);
+        timeout_counter++;
+        continue;
+    }
+
+    if (timeout_counter == timeout_period)
+    {
+        // Clear flag (set as a result of device not responding/present)
+        i2c_flag_clear(I2C_PERIPH, I2C_FLAG_AERR);
+        status = eI2C_TIMEOUT;
+    }
+    else
+    {
+        if (clear_addsend != 0)
+        {
+            i2c_flag_clear(I2C_PERIPH, I2C_FLAG_ADDSEND);
+        }
+
+        status = eI2C_OK;
+    }
+
+    return status;
 }
 
 /**
@@ -526,7 +576,7 @@ static uint32_t FindI2CAddress(void)
                 // Pass - Device has been found
                 // Send a stop and exit loop
                 i2c_stop_on_bus(I2C_PERIPH);
-                while (I2C_CTL0(I2C_PERIPH) & 0x0200)
+                while (I2C_CTL0(I2C_PERIPH) & I2C_CTL0_STOP)
                 {
                     continue;
                 }
@@ -537,7 +587,7 @@ static uint32_t FindI2CAddress(void)
 
         // Send a stop condition to I2C bus and wait for stop condition to be generated
         i2c_stop_on_bus(I2C_PERIPH);
-        while (I2C_CTL0(I2C_PERIPH) & 0x0200)
+        while (I2C_CTL0(I2C_PERIPH) & I2C_CTL0_STOP)
         {
             continue;
         }
