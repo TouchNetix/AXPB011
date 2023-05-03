@@ -52,10 +52,6 @@ typedef struct
 
 typedef struct
 {
-    uint8_t     SemaphoreUsageNumber;
-    uint8_t     SemaphoreOffset;
-    uint8_t     SemaphoreStartByte;
-    uint8_t     SemaphoreStopByte;
     uint8_t     NumTx;  // Number of bytes to write to axiom
     uint16_t    TotalNumRX; // TOTAL no. bytes to read (concatenated into a 16 bit word)
     uint8_t     PageLength; // Length of a page (in case page size changes in firmware update)
@@ -96,7 +92,6 @@ int8_t FindUsageInTable(uint8_t requested_usage_num);
 usagetableentry_st *GetUsageInfo(uint8_t index);
 void StoreMultipageReadInfo(MultiPageSetupTypeDef *setup);
 MultiPageSetupTypeDef *GetMultiPageReadInfo(void);
-void WriteSemaphore(uint8_t start_stop);
 uint16_t Getu34Addr(void);
 void Updateu34Addr(uint16_t addr);
 uint16_t Getu35Addr(void);

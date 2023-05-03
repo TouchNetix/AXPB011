@@ -52,20 +52,23 @@
 /*******************************************************************************
  * Constants (including enums)
  ******************************************************************************/
-
+#define I2CSTATUS_READWRITEOK       (0x00U)
+#define I2CSTATUS_COMMS_FAILED      (0x01U)
+#define I2CSTATUS_TIMEOUT           (0x02U)
+#define I2CSTATUS_WRITE_OK_NOREAD   (0x04U)
 
 /*******************************************************************************
  * Exported Variables
  ******************************************************************************/
-extern uint32_t test;
+
  
 /*******************************************************************************
  * Exported Functions
  ******************************************************************************/
 void        I2C_Init(void);
 void        I2C_DeInit(void);
-void        I2C_WriteAxiom(uint8_t pagenum, uint8_t offset, uint8_t *pbuf, uint32_t length);
-void        I2C_ReadAxiom(uint8_t pagenum, uint8_t offset, uint8_t *pbuf, uint32_t length);
+uint32_t    I2C_WriteAxiom(uint8_t pagenum, uint8_t offset, uint8_t *pbuf, uint32_t length);
+uint32_t    I2C_ReadAxiom(uint8_t pagenum, uint8_t offset, uint8_t *pbuf, uint32_t length);
 uint32_t    I2C_GetI2CAddress(void);
 						   
 /*******************************************************************************

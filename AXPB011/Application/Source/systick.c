@@ -120,7 +120,7 @@ void delay_1ms(uint32_t count)
  */
 void delay_1us(uint32_t delay)
 {
-    for (uint32_t wait = 0; wait < (delay * 10); wait++)
+    for (uint32_t wait = 0U; wait < (delay * 10U); wait++)
     {
         __ASM volatile ("nop");
         __ASM volatile ("nop");

@@ -53,7 +53,10 @@
 /*******************************************************************************
  * Constants (including enums)
  ******************************************************************************/
-
+#define SPISTATUS_READWRITEOK       (0x00U)
+#define SPISTATUS_COMMS_FAILED      (0x01U)
+#define SPISTATUS_TIMEOUT           (0x02U)
+#define SPISTATUS_WRITE_OK_NOREAD   (0x04U)
 
 /*******************************************************************************
  * Exported Variables
@@ -63,10 +66,10 @@
 /*******************************************************************************
  * Exported Functions
  ******************************************************************************/
-void    SPI_Init(void);
-void    SPI_DeInit(void);
-void    SPI_WriteAxiom(uint8_t pagenum, uint8_t offset, uint8_t *pbuf, uint32_t length);
-void    SPI_ReadAxiom(uint8_t pagenum, uint8_t offset, uint8_t *pbuf, uint32_t length);
+void        SPI_Init(void);
+void        SPI_DeInit(void);
+uint32_t    SPI_WriteAxiom(uint8_t pagenum, uint8_t offset, uint8_t *pbuf, uint32_t length);
+uint32_t    SPI_ReadAxiom(uint8_t pagenum, uint8_t offset, uint8_t *pbuf, uint32_t length);
 						   
 /*******************************************************************************
  * Macros

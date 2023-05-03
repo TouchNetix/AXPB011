@@ -149,6 +149,7 @@ int main(void)
         // Prevents reading axiom before it has time to de-assert nIRQ
         // Time between EOT and nIRQ de-asserting = ~22us
         // Sleep to allow nIRQ time to de-assert.
+        // This doesn't appear to have any effect on read speeds, so leaving in as a safety measure.
         delay_1us(30);
     }
 }
@@ -240,12 +241,11 @@ static void RunProxy(usb_dev *udev, uint8_t *USBControl, uint8_t *USBPress, uint
             break;
         }
 
-        // Performing a multipage read (e.g. for 3D/diagnostic data)
+        // Performing a multi-page read (e.g. for 3D/diagnostic data)
         case eMultiPageRead:
         {
             enMultiPageStatus status = MultiPageProxyReport(ProxyReport);
 
-            // Do a read from axiom (multipage style)
             if (status == eDataRead)
             {
                 // Data read, queue packet for control USB interface

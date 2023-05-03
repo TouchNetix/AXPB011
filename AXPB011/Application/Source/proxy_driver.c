@@ -154,7 +154,6 @@ enMultiPageStatus MultiPageProxyReport(uint8_t *pbuf)
     {
         // Nothing else to read
         status = eLastRead;
-        WriteSemaphore(SEMAPHORE_STOP);
     }
     else
     {
