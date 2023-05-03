@@ -284,7 +284,6 @@ static void DetectCommsInactivity(uint8_t axiom_comms, uint8_t usb_comms)
             if(heartbeat_usb_count >= 29000)
             {
                 gpio_bit_write(LED_USB_GPIO_PORT, LED_USB_GPIO_PIN, RESET);
-//                delay_1ms(50);
                 heartbeat_usb_count = 0;
             }
             else
