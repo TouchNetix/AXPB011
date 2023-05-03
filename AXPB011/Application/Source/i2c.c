@@ -53,6 +53,7 @@ typedef enum
     eI2C_TIMEOUT    = 2,
 } en_i2cStatus;
 
+
 /*******************************************************************************
  * Exported Variables
  ******************************************************************************/
@@ -72,7 +73,12 @@ static uint32_t g_axiom_i2c_addr = 0;
  * File Scope Constants
  ******************************************************************************/
 #define I2C_PERIPH      (I2C0)
-#define I2C_TIMEOUT_MS  (10U)
+
+#define I2C_MAX_TIMEOUT_COUNT   (10U)
+#define I2C_SLEEP_US            (5U)
+
+#define STATUS_OK       (0x00U)
+#define STATUS_ERROR    (0x01U)
 
 /*******************************************************************************
  * File Scope Macros
@@ -101,9 +107,16 @@ static uint32_t g_axiom_i2c_addr = 0;
 /*******************************************************************************
  * File Scope Function Prototypes
  ******************************************************************************/
-static void         I2C_Transmit(uint8_t *pdata, uint32_t length);
-static void         I2C_Receive(uint8_t *pbuf, uint32_t length);
-static en_i2cStatus I2C_SendAddress(uint32_t read_write, uint8_t clear_addsend, uint32_t timeout_period);
+static en_i2cStatus I2C_WaitForIdleBus(void);
+static en_i2cStatus I2C_PopulateCommandBytes(uint8_t *pBuffer, uint8_t pagenum, uint8_t offset, uint32_t length, uint8_t read_write);
+static en_i2cStatus I2C_SendStartToBus(void);
+static void         I2C_SendStopToBus(void);
+static en_i2cStatus I2C_Transmit(uint8_t *pdata, uint32_t length);
+static en_i2cStatus I2C_Receive(uint8_t *pbuf, uint32_t length);
+static en_i2cStatus I2C_SendAddress(uint32_t read_write, uint8_t clear_addsend);
+static en_i2cStatus I2C_TransmitByte(uint8_t data);
+static en_i2cStatus I2C_WaitForRBNEFlag(void);
+static en_i2cStatus I2C_WaitForBTCFlag(void);
 static void         I2C_PinConfig(void);
 static void         SetI2CAddress(uint32_t addr);
 static uint32_t     FindI2CAddress(void);
@@ -154,36 +167,52 @@ void I2C_DeInit(void)
  * @param[in]   offset  Offset into page to be written to.
  * @param[in]   pbuf    Pointer to the data to be sent.
  * @param[in]   length  Number of bytes to write.
+ * @return  Status of I2C comms.
+ * @retval  I2CSTATUS_WRITE_OK_NOREAD   Bridge successfully wrote to aXiom.
+ * @retval  I2CSTATUS_COMMS_FAILED      Bridge could not communicate with aXiom (either through invalid setup or other error).
+ * @retval  I2CSTATUS_DEVICE_TIMEOUT    aXiom did not respond to the bridge in time.
  */
-void I2C_WriteAxiom(uint8_t pagenum, uint8_t offset, uint8_t *pbuf, uint32_t length)
+uint32_t I2C_WriteAxiom(uint8_t pagenum, uint8_t offset, uint8_t *pbuf, uint32_t length)
 {
     // Wait until I2C bus is idle
-    while (i2c_flag_get(I2C_PERIPH, I2C_FLAG_I2CBSY))
+    if (I2C_WaitForIdleBus() == eI2C_TIMEOUT)
     {
-        continue;
+        return I2CSTATUS_TIMEOUT;
     }
 
+    // Prepare the transmit buffer
     uint8_t txbuffer[I2C_TXRX_BUFFER_SIZE] = {0};
-    txbuffer[0] = offset;
-    txbuffer[1] = pagenum;
-    txbuffer[2] = length & 0x00FFU;
-    txbuffer[3] = ((length & 0xFF00U) >> 8U)| WRITE;
+    if (I2C_PopulateCommandBytes(txbuffer, pagenum, offset, length, WRITE) == eI2C_FAIL)
+    {
+        // Pointer to buffer was NULL
+        return I2CSTATUS_COMMS_FAILED;
+    }
+
+    // Copy over the payload to be written to aXiom
     memcpy(&txbuffer[4], &pbuf[0], length);
 
     // Send a start condition to I2C bus
-    i2c_start_on_bus(I2C_PERIPH);
-    while (!i2c_flag_get(I2C_PERIPH, I2C_FLAG_SBSEND))
+    // Timeout in case another device on the I2C bus is hogging the bandwidth
+    if (I2C_SendStartToBus() != eI2C_OK)
     {
-        continue;
+        // Comms failed, send a stop condition and exit here
+        I2C_SendStopToBus();
+        return I2CSTATUS_TIMEOUT;
     }
 
-    I2C_Transmit(txbuffer, (length + NUM_CMD_BYTES));
+    // Write to aXiom
+    en_i2cStatus i2c_status = I2C_Transmit(txbuffer, (length + NUM_CMD_BYTES));
 
-    // Send a stop condition to I2C bus and wait for stop condition to be generated
-    i2c_stop_on_bus(I2C_PERIPH);
-    while (I2C_CTL0(I2C_PERIPH) & I2C_CTL0_STOP)
+    // Send a stop condition to I2C bus regardless of comms status (releases bus for other controllers)
+    I2C_SendStopToBus();
+
+    if (i2c_status == eI2C_TIMEOUT)
     {
-        continue;
+        return I2CSTATUS_TIMEOUT;
+    }
+    else
+    {
+        return I2CSTATUS_WRITE_OK_NOREAD;
     }
 }
 
@@ -194,32 +223,60 @@ void I2C_WriteAxiom(uint8_t pagenum, uint8_t offset, uint8_t *pbuf, uint32_t len
  * @param[in]   offset  Offset into page to be read from.
  * @param[out]  pbuf    Pointer to buffer where read data will be stored.
  * @param[in]   length  Number of bytes to read.
+ * @return  Status of I2C comms.
+ * @retval  I2CSTATUS_READWRITE_OK      Bridge successfully read from aXiom.
+ * @retval  I2CSTATUS_COMMS_FAILED      Bridge could not communicate with aXiom (either through invalid setup or other error).
+ * @retval  I2CSTATUS_DEVICE_TIMEOUT    aXiom did not respond to the bridge in time.
  */
-void I2C_ReadAxiom(uint8_t pagenum, uint8_t offset, uint8_t *pbuf, uint32_t length)
+uint32_t I2C_ReadAxiom(uint8_t pagenum, uint8_t offset, uint8_t *pbuf, uint32_t length)
 {
     // Wait until I2C bus is idle
-    while (i2c_flag_get(I2C_PERIPH, I2C_FLAG_I2CBSY))
+    if (I2C_WaitForIdleBus() != eI2C_OK)
     {
-        continue;
+        return I2CSTATUS_TIMEOUT;
     }
 
-    uint8_t txbuffer[NUM_CMD_BYTES] = {0};
-    txbuffer[0] = offset;
-    txbuffer[1] = pagenum;
-    txbuffer[2] = length & 0x00FFU;
-    txbuffer[3] = ((length & 0xFF00U) >> 8U)| READ;
+    // Prepare the transmit buffer
+    uint8_t txbuffer[I2C_TXRX_BUFFER_SIZE] = {0U};
+    if (I2C_PopulateCommandBytes(txbuffer, pagenum, offset, length, READ) != eI2C_OK)
+    {
+        // Pointer to buffer was NULL
+        return I2CSTATUS_COMMS_FAILED;
+    }
 
     // Send a start condition to I2C bus
-    i2c_start_on_bus(I2C_PERIPH);
-    while (!i2c_flag_get(I2C_PERIPH, I2C_FLAG_SBSEND))
+    // Timeout in case another device on the I2C bus is hogging the bandwidth
+    if (I2C_SendStartToBus() != eI2C_OK)
     {
-        continue;
+        // Comms failed, send a stop condition and exit here
+        I2C_SendStopToBus();
+        return I2CSTATUS_TIMEOUT;
     }
 
-    I2C_Transmit(txbuffer, NUM_CMD_BYTES);
+    // Write to aXiom
+    if (I2C_Transmit(txbuffer, NUM_CMD_BYTES) != eI2C_OK)
+    {
+        // Comms failed, send a stop condition and exit here
+        I2C_SendStopToBus();
+        return I2CSTATUS_TIMEOUT;
+    }
 
+    // Read data from aXiom
     // Repeated start and stop condition generated in I2C_Receive()
-    I2C_Receive(pbuf, length);
+    en_i2cStatus i2c_status = I2C_Receive(pbuf, length);
+
+    if (i2c_status == eI2C_FAIL)
+    {
+        return I2CSTATUS_COMMS_FAILED;
+    }
+    else if (i2c_status == eI2C_TIMEOUT)
+    {
+        return I2CSTATUS_TIMEOUT;
+    }
+    else
+    {
+        return I2CSTATUS_READWRITEOK;
+    }
 }
 
 /**
@@ -234,24 +291,110 @@ uint32_t I2C_GetI2CAddress(void)
  * File Scope Function Definitions
  ******************************************************************************/
 /**
+ * @brief   Waits for the I2C bus to become idle (i.e. waits for previous transmission to end), with a timeout.
+ * @retval  I2C status: eI2C_Fail, eI2C_TIMEOUT or eI2C_OK.
+ */
+static en_i2cStatus I2C_WaitForIdleBus(void)
+{
+    uint32_t timeout_counter = 0;
+    en_i2cStatus status = eI2C_OK;
+
+    while (i2c_flag_get(I2C_PERIPH, I2C_FLAG_I2CBSY) && (timeout_counter < I2C_MAX_TIMEOUT_COUNT))
+    {
+        delay_1us(I2C_SLEEP_US);
+        timeout_counter++;
+        continue;
+    }
+
+    if (timeout_counter == I2C_MAX_TIMEOUT_COUNT)
+    {
+        status = eI2C_TIMEOUT;
+    }
+
+    return status;
+}
+
+/**
+ * @brief   Populates the start of the buffer passed in with the axiom command bytes.
+ * @param[in]   pBuffer     Pointer to buffer for commands bytes to be written to.
+ * @param[in]   pagenum     Page address in axiom to be written to.
+ * @param[in]   offset      Offset into page to be written to.
+ * @param[in]   length      Number of bytes to write.
+ * @param[in]   read_write  Field determining if we're requesting a read or write from aXiom.
+ * @retval  I2C status: eI2C_Fail, eI2C_TIMEOUT or eI2C_OK.
+ */
+static en_i2cStatus I2C_PopulateCommandBytes(uint8_t *pBuffer, uint8_t pagenum, uint8_t offset, uint32_t length, uint8_t read_write)
+{
+    en_i2cStatus status = eI2C_OK;
+
+    if (pBuffer == NULL)
+    {
+        status = eI2C_FAIL;
+    }
+    else
+    {
+        pBuffer[0] = offset;
+        pBuffer[1] = pagenum;
+        pBuffer[2] = length & 0x00FFU;
+        pBuffer[3] = ((length & 0xFF00U) >> 8U)| read_write;
+    }
+
+    return status;
+}
+
+/**
+ * @brief   Sends the start condition to the I2C bus with a timeout.
+ * @retval  I2C status: eI2C_Fail, eI2C_TIMEOUT or eI2C_OK.
+ */
+static en_i2cStatus I2C_SendStartToBus(void)
+{
+    en_i2cStatus status = eI2C_OK;
+    uint32_t timeout_counter = 0;
+
+    i2c_start_on_bus(I2C_PERIPH);
+    while ((!i2c_flag_get(I2C_PERIPH, I2C_FLAG_SBSEND)) && (timeout_counter < I2C_MAX_TIMEOUT_COUNT))
+    {
+        delay_1us(I2C_SLEEP_US);
+        timeout_counter++;
+        continue;
+    }
+
+    if (timeout_counter == I2C_MAX_TIMEOUT_COUNT)
+    {
+        // Clear flag (set as a result of device not responding/present)
+        i2c_flag_clear(I2C_PERIPH, I2C_FLAG_AERR);
+        status = eI2C_TIMEOUT;
+    }
+
+    return status;
+}
+
+/**
+ * @brief   Sends the stop condition to the I2C bus with a timeout.
+ */
+static void I2C_SendStopToBus(void)
+{
+    // No need for timeout, not waiting for slave to ACK
+    i2c_stop_on_bus(I2C_PERIPH);
+    while (I2C_CTL0(I2C_PERIPH) & I2C_CTL0_STOP)
+    {
+        continue;
+    }
+}
+
+/**
  * @brief   Enacts the data write to the I2C bus.
  * @param[in]   pbuf    Pointer to the data to be sent.
  * @param[in]   length  Number of bytes to write.
+ * @retval  I2C status: eI2C_Fail, eI2C_TIMEOUT or eI2C_OK.
  */
-static void I2C_Transmit(uint8_t *pbuf, uint32_t length)
+static en_i2cStatus I2C_Transmit(uint8_t *pbuf, uint32_t length)
 {
     // Send slave address to I2C bus
-    if (I2C_SendAddress(I2C_TRANSMITTER, ADDSEND_CLEAR, I2C_TIMEOUT_MS) != eI2C_OK)
+    if (I2C_SendAddress(I2C_TRANSMITTER, ADDSEND_CLEAR) == eI2C_TIMEOUT)
     {
         // Target device not present/responsive
-        // Send a stop condition to I2C bus and wait for stop condition to be generated
-        i2c_stop_on_bus(I2C_PERIPH);
-        while (I2C_CTL0(I2C_PERIPH) & I2C_CTL0_STOP)
-        {
-            continue;
-        }
-
-        return;
+        return eI2C_TIMEOUT;
     }
 
     // Wait until the transmit data buffer is empty
@@ -260,29 +403,31 @@ static void I2C_Transmit(uint8_t *pbuf, uint32_t length)
         continue;
     }
 
-    for (uint32_t i = 0; i < length; i++)
+    for (uint32_t i = 0U; i < length; i++)
     {
-        i2c_data_transmit(I2C_PERIPH, pbuf[i]);
-
-        // Wait until the TBE bit is set
-        while (!i2c_flag_get(I2C_PERIPH, I2C_FLAG_TBE))
+        if (I2C_TransmitByte(pbuf[i]) != eI2C_OK)
         {
-            continue;
+            return eI2C_TIMEOUT;
         }
     }
+
+    return eI2C_OK;
 }
 
 /**
  * @brief   Enacts the data read from the I2C bus.
  * @param[out]  pbuf    Pointer to buffer where read data will be stored.
  * @param[in]   length  Number of bytes to read.
+ * @retval  I2C status: eI2C_Fail, eI2C_TIMEOUT or eI2C_OK.
  */
-static void I2C_Receive(uint8_t *pbuf, uint32_t length)
+static en_i2cStatus I2C_Receive(uint8_t *pbuf, uint32_t length)
 {
-    if (length == 0)
+    if (length == 0U)
     {
         // Do nothing
-        return;
+        // Makes sure we free the bus for other controllers/future transfers
+        I2C_SendStopToBus();
+        return eI2C_FAIL;
     }
     else
     {
@@ -293,24 +438,17 @@ static void I2C_Receive(uint8_t *pbuf, uint32_t length)
         }
 
         // Repeated start
-        i2c_start_on_bus(I2C_PERIPH);
-        while (!i2c_flag_get(I2C_PERIPH, I2C_FLAG_SBSEND))
+        if (I2C_SendStartToBus() != eI2C_OK)
         {
-            continue;
+            return eI2C_TIMEOUT;
         }
 
         // Send slave address to I2C bus but don't clear the address sent flag yet
-        if (I2C_SendAddress(I2C_RECEIVER, ADDSEND_DONTCLEAR, I2C_TIMEOUT_MS) != eI2C_OK)
+        if (I2C_SendAddress(I2C_RECEIVER, ADDSEND_DONTCLEAR) == eI2C_TIMEOUT)
         {
             // Target device not present/responsive
-            // Send a stop condition to I2C bus and wait for stop condition to be generated
-            i2c_stop_on_bus(I2C_PERIPH);
-            while (I2C_CTL0(I2C_PERIPH) & I2C_CTL0_STOP)
-            {
-                continue;
-            }
-
-            return;
+            I2C_SendStopToBus();
+            return eI2C_TIMEOUT;
         }
 
         // Disable acknowledge before clearing ADDSEND flag if doing a short read
@@ -323,21 +461,17 @@ static void I2C_Receive(uint8_t *pbuf, uint32_t length)
 
         if (length == 1U)
         {
-            // Send a stop condition to I2C bus and wait for stop condition to be generated
-            i2c_stop_on_bus(I2C_PERIPH);
-            while (I2C_CTL0(I2C_PERIPH) & I2C_CTL0_STOP)
-            {
-                continue;
-            }
+            I2C_SendStopToBus();
 
-            // Wait until the RBNE bit is set
-            while (!i2c_flag_get(I2C_PERIPH, I2C_FLAG_RBNE))
+            // Flag gets set when the hardware I2C buffer is not empty
+            if (I2C_WaitForRBNEFlag() != eI2C_OK)
             {
-                continue;
+                I2C_SendStopToBus();
+                return eI2C_TIMEOUT;
             }
 
             // Read data from I2C_DATA
-            pbuf[0] = i2c_data_receive(I2C_PERIPH);
+            pbuf[0U] = i2c_data_receive(I2C_PERIPH);
 
             // Re-Enable acknowledge
             i2c_ack_config(I2C_PERIPH, I2C_ACK_ENABLE);
@@ -345,25 +479,22 @@ static void I2C_Receive(uint8_t *pbuf, uint32_t length)
         else if (length == 2U)
         {
             // Wait for BTC to be set - indicates byte to receive but rx buffer is full
-            while (!i2c_flag_get(I2C_PERIPH, I2C_FLAG_BTC))
+            if (I2C_WaitForBTCFlag() != eI2C_OK)
             {
-                continue;
+                I2C_SendStopToBus();
+                return eI2C_TIMEOUT;
             }
 
-            // Send a stop condition to I2C bus and wait for stop condition to be generated
-            i2c_stop_on_bus(I2C_PERIPH);
-            while (I2C_CTL0(I2C_PERIPH) & I2C_CTL0_STOP)
-            {
-                continue;
-            }
+            I2C_SendStopToBus();
 
             // Read out the 2 data bytes
-            for (uint32_t i = 0; i < length; i++)
+            for (uint32_t i = 0U; i < length; i++)
             {
-                // Wait until the RBNE bit is set
-                while (!i2c_flag_get(I2C_PERIPH, I2C_FLAG_RBNE))
+                // Flag gets set when the hardware I2C buffer is not empty
+                if (I2C_WaitForRBNEFlag() != eI2C_OK)
                 {
-                    continue;
+                    I2C_SendStopToBus();
+                    return eI2C_TIMEOUT;
                 }
 
                 // Read a byte from I2C_DATA
@@ -378,24 +509,26 @@ static void I2C_Receive(uint8_t *pbuf, uint32_t length)
         }
         else
         {
-            for (uint32_t i = 0; i < length; i++)
+            for (uint32_t i = 0U; i < length; i++)
             {
                 if (i == (length - 3U))
                 {
                     // Wait until the (length - 2) data byte is received into the shift register
-                    while (!i2c_flag_get(I2C_PERIPH, I2C_FLAG_BTC))
+                    if (I2C_WaitForBTCFlag() != eI2C_OK)
                     {
-                        continue;
+                        I2C_SendStopToBus();
+                        return eI2C_TIMEOUT;
                     }
 
                     // Disable acknowledge
                     i2c_ack_config(I2C_PERIPH, I2C_ACK_DISABLE);
                 }
 
-                // Wait until the RBNE bit is set
-                while (!i2c_flag_get(I2C_PERIPH, I2C_FLAG_RBNE))
+                // Flag gets set when the hardware I2C buffer is not empty
+                if (I2C_WaitForRBNEFlag() != eI2C_OK)
                 {
-                    continue;
+                    I2C_SendStopToBus();
+                    return eI2C_TIMEOUT;
                 }
 
                 // Read a byte from I2C_DATA
@@ -405,14 +538,11 @@ static void I2C_Receive(uint8_t *pbuf, uint32_t length)
             // Re-Enable acknowledge
             i2c_ack_config(I2C_PERIPH, I2C_ACK_ENABLE);
 
-            // Send a stop condition to I2C bus and wait for stop condition to be generated
-            i2c_stop_on_bus(I2C_PERIPH);
-            while (I2C_CTL0(I2C_PERIPH) & I2C_CTL0_STOP)
-            {
-                continue;
-            }
+            I2C_SendStopToBus();
         }
     }
+
+    return eI2C_OK;
 }
 
 /**
@@ -421,41 +551,123 @@ static void I2C_Receive(uint8_t *pbuf, uint32_t length)
  *                              Must be one of the following arguments:
  * @arg                             I2C_TRANSMITTER - Write
  * @arg                             I2C_RECEIVER - Read
- * @param[in]   timeout         Time in milliseconds the function will wait for the slave to acknowledge the address.
  * @param[in]   clear_addsend   Select if address sent flag is cleared in the function or not:
  * @arg                             ADDSEND_CLEAR - Address sent flag is cleared.
  * @arg                             Any other value - Address sent flag is not cleared.
- * @retval  I2C status: eI2C_TIMEOUT or eI2C_OK.
+ * @retval  I2C status: eI2C_Fail, eI2C_TIMEOUT or eI2C_OK.
  */
-static en_i2cStatus I2C_SendAddress(uint32_t read_write, uint8_t clear_addsend, uint32_t timeout_period)
+static en_i2cStatus I2C_SendAddress(uint32_t read_write, uint8_t clear_addsend)
 {
-    uint32_t timeout_counter = 0;
-    en_i2cStatus status = eI2C_FAIL;
+    uint32_t timeout_counter = 0U;
+    en_i2cStatus status = eI2C_OK;
 
     i2c_master_addressing(I2C_PERIPH, I2C_GetI2CAddress(), read_write);
 
     // Wait for slave to acknowledge the address (address sent flag raised) or the timeout period to elapse
-    while ((!i2c_flag_get(I2C_PERIPH, I2C_FLAG_ADDSEND)) && (timeout_counter < timeout_period))
+    while ((!i2c_flag_get(I2C_PERIPH, I2C_FLAG_ADDSEND)) && (timeout_counter < I2C_MAX_TIMEOUT_COUNT))
     {
-        delay_1ms(1);
+        delay_1us(I2C_SLEEP_US);
         timeout_counter++;
         continue;
     }
 
-    if (timeout_counter == timeout_period)
+    if (timeout_counter == I2C_MAX_TIMEOUT_COUNT)
     {
-        // Clear flag (set as a result of device not responding/present)
-        i2c_flag_clear(I2C_PERIPH, I2C_FLAG_AERR);
+        // Clear flags
+        i2c_flag_clear(I2C_PERIPH, I2C_FLAG_AERR); // Set as a result of device not responding/present
+        i2c_flag_clear(I2C_PERIPH, I2C_FLAG_ADDSEND);
         status = eI2C_TIMEOUT;
     }
     else
     {
-        if (clear_addsend != 0)
+        if (clear_addsend != 0U)
         {
             i2c_flag_clear(I2C_PERIPH, I2C_FLAG_ADDSEND);
         }
 
         status = eI2C_OK;
+    }
+
+    return status;
+}
+
+/**
+ * @brief   Transmits a byte of data on the I2C bus, with a timeout in the event of no response
+ * @param[in]   data    Byte to be sent
+ * @retval  I2C status: eI2C_Fail, eI2C_TIMEOUT or eI2C_OK.
+ */
+static en_i2cStatus I2C_TransmitByte(uint8_t data)
+{
+    uint32_t timeout_counter = 0U;
+    en_i2cStatus status = eI2C_OK;
+
+    i2c_data_transmit(I2C_PERIPH, data);
+
+    // Wait until the TBE bit is set
+    while ((!i2c_flag_get(I2C_PERIPH, I2C_FLAG_TBE)) && (timeout_counter < I2C_MAX_TIMEOUT_COUNT))
+    {
+        delay_1us(I2C_SLEEP_US);
+        timeout_counter++;
+        continue;
+    }
+
+    if (timeout_counter == I2C_MAX_TIMEOUT_COUNT)
+    {
+        // Clear flag (set as a result of device not responding/present)
+        i2c_flag_clear(I2C_PERIPH, I2C_FLAG_AERR);
+        status = eI2C_TIMEOUT;
+    }
+
+    return status;
+}
+
+/**
+ * @brief   Waits for the RBNE flag to be raised, with a timeout. Indicates the RX buffer is not empty.
+ * @retval  I2C status: eI2C_Fail, eI2C_TIMEOUT or eI2C_OK.
+ */
+static en_i2cStatus I2C_WaitForRBNEFlag(void)
+{
+    uint32_t timeout_counter = 0U;
+    en_i2cStatus status = eI2C_OK;
+
+    while ((!i2c_flag_get(I2C_PERIPH, I2C_FLAG_RBNE)) && (timeout_counter < I2C_MAX_TIMEOUT_COUNT))
+    {
+        delay_1us(I2C_SLEEP_US);
+        timeout_counter++;
+        continue;
+    }
+
+    if (timeout_counter == I2C_MAX_TIMEOUT_COUNT)
+    {
+        // Clear flag (set as a result of device not responding/present)
+        i2c_flag_clear(I2C_PERIPH, I2C_FLAG_AERR);
+        status = eI2C_TIMEOUT;
+    }
+
+    return status;
+}
+
+/**
+ * @brief   Waits for the BTC flag to be raised, with a timeout. Indicates a byte can be received but the buffer is full.
+ * @retval  I2C status: eI2C_Fail, eI2C_TIMEOUT or eI2C_OK.
+ */
+static en_i2cStatus I2C_WaitForBTCFlag(void)
+{
+    uint32_t timeout_counter = 0U;
+    en_i2cStatus status = eI2C_OK;
+
+    while ((!i2c_flag_get(I2C_PERIPH, I2C_FLAG_BTC)) && (timeout_counter < I2C_MAX_TIMEOUT_COUNT))
+    {
+        delay_1us(I2C_SLEEP_US);
+        timeout_counter++;
+        continue;
+    }
+
+    if (timeout_counter == I2C_MAX_TIMEOUT_COUNT)
+    {
+        // Clear flag (set as a result of device not responding/present)
+        i2c_flag_clear(I2C_PERIPH, I2C_FLAG_AERR);
+        status = eI2C_TIMEOUT;
     }
 
     return status;
@@ -553,7 +765,7 @@ static uint32_t FindI2CAddress(void)
             }
 
             // Gives the ADDSEND flag time to assert
-            delay_1ms(1);
+            delay_1us(I2C_SLEEP_US);
         }
 
         if (timeout_flag == 0)

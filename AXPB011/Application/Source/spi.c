@@ -40,12 +40,17 @@
 /*******************************************************************************
  * File Scope Conditional Compilation Flags
  ******************************************************************************/
-#define SPI_PERIPH  SPI0
+
 
 /*******************************************************************************
  * File Scope Data Types
  ******************************************************************************/
-
+typedef enum
+{
+    eSPI_OK         = 0,
+    eSPI_FAIL       = 1,
+    eSPI_TIMEOUT    = 2,
+} en_spiStatus;
 
 /*******************************************************************************
  * Exported Constants
@@ -55,6 +60,15 @@
 /*******************************************************************************
  * File Scope Constants
  ******************************************************************************/
+#define SPI_PERIPH  SPI0
+
+// Timeout waits for a maximum of 250us - more than enough time for transfers to complete but shouldn't be taking longer than this
+// SPI speed = 4MHz
+// No. bytes = 4 + 32 + 58 = 94
+// Time for max. transfer = 23.5us + overhead, dma set, etc.
+#define SPI_MAX_TIMEOUT_COUNT   (50U)
+#define SPI_SLEEP_US            (  5U)
+
 #define SPI_NSS_GPIO_PORT       (GPIOA)
 #define SPI_SCK_GPIO_PORT       (GPIOA)
 #define SPI_MISO_GPIO_PORT      (GPIOA)
@@ -70,6 +84,8 @@
 #define SPI_TXRX_BUFFER_SIZE    (NUM_CMD_BYTES + NUM_PADDING_BYTES + USB_ENDPOINT_SIZE)
 #define WRITE                   (0x00U)
 #define READ                    (0x80U)
+
+#define SPI_COOLOFF_US          (200U)  // Anything less than this and SPI doesn't function correctly - reads from aXiom too quickly
 
 /*******************************************************************************
  * File Scope Variables
@@ -95,9 +111,10 @@ uint8_t g_spi_rx_buffer[SPI_TXRX_BUFFER_SIZE] = {0};
 /*******************************************************************************
  * File Scope Function Prototypes
  ******************************************************************************/
-static void SPI_PinConfig(void);
-static void SPI_DMAConfig(void);
-static void SPI_SetNumTxBytes(uint16_t length);
+static void         SPI_PinConfig(void);
+static void         SPI_DMAConfig(void);
+static void         SPI_SetNumTxBytes(uint16_t length);
+static en_spiStatus SPI_WaitForTransferToComplete(void);
 
 /*******************************************************************************
  * Exported Function Definitions
@@ -166,9 +183,15 @@ void SPI_DeInit(void)
  * @param[in]   offset  Offset into page to be written to.
  * @param[in]   pbuf    Pointer to the data to be sent.
  * @param[in]   length  Number of bytes to write.
+ * @return  Status of SPI comms.
+ * @retval  SPISTATUS_WRITE_OK_NOREAD   Bridge successfully wrote to aXiom.
+ * @retval  SPISTATUS_COMMS_FAILED      Bridge could not communicate with aXiom (either through invalid setup or other error).
+ * @retval  SPISTATUS_DEVICE_TIMEOUT    Bridge got stuck waiting for DMA transfers to complete (likely an invalid setup).
  */
-void SPI_WriteAxiom(uint8_t pagenum, uint8_t offset, uint8_t *pbuf, uint32_t length)
+uint32_t SPI_WriteAxiom(uint8_t pagenum, uint8_t offset, uint8_t *pbuf, uint32_t length)
 {
+    uint32_t status = SPISTATUS_WRITE_OK_NOREAD;
+
     memset(g_spi_tx_buffer, 0x00, SPI_TXRX_BUFFER_SIZE);
     memset(g_spi_rx_buffer, 0x00, SPI_TXRX_BUFFER_SIZE);
 
@@ -190,13 +213,10 @@ void SPI_WriteAxiom(uint8_t pagenum, uint8_t offset, uint8_t *pbuf, uint32_t len
     spi_dma_enable(SPI_PERIPH, SPI_DMA_TRANSMIT);
 
     // Wait for the DMA transfer to complete
-    while(!dma_flag_get(DMA_CH2, DMA_INT_FLAG_FTF))
+    // This function can only return eSPI_OK or eSPI_TIMEOUT
+    if (SPI_WaitForTransferToComplete() == eSPI_TIMEOUT)
     {
-        continue;
-    }
-    while(!dma_flag_get(DMA_CH1, DMA_INT_FLAG_FTF))
-    {
-        continue;
+        status = SPISTATUS_TIMEOUT;
     }
 
     // Set the nSS signal high (de-assert)
@@ -208,10 +228,13 @@ void SPI_WriteAxiom(uint8_t pagenum, uint8_t offset, uint8_t *pbuf, uint32_t len
     dma_flag_clear(DMA_CH2, DMA_INT_FLAG_FTF);
     dma_flag_clear(DMA_CH1, DMA_INT_FLAG_FTF);
 
-    // Workaround - prevents axiom reporting SPI underflows
+    // Delay to prevent reading in quick succession. Need to give aXiom time to setup the next transfer.
     // Even with this delay the bridge could read ~5000 reports per second (although probably less in practice)
     // which is far more than would ever be required.
-    delay_1us(200);
+    // Only required for SPI.
+    delay_1us(SPI_COOLOFF_US);
+
+    return status;
 }
 
 /**
@@ -222,9 +245,15 @@ void SPI_WriteAxiom(uint8_t pagenum, uint8_t offset, uint8_t *pbuf, uint32_t len
  * @param[in]   offset  Offset into page to be read from.
  * @param[out]  pbuf    Pointer to buffer where read data will be stored.
  * @param[in]   length  Number of bytes to read.
+ * @return  Status of SPI comms.
+ * @retval  SPISTATUS_READWRITEOK      Bridge successfully read from aXiom.
+ * @retval  SPISTATUS_COMMS_FAILED      Bridge could not communicate with aXiom (either through invalid setup or other error).
+ * @retval  SPISTATUS_DEVICE_TIMEOUT    Bridge got stuck waiting for DMA transfers to complete (likely an invalid setup).
  */
-void SPI_ReadAxiom(uint8_t pagenum, uint8_t offset, uint8_t *pbuf, uint32_t length)
+uint32_t SPI_ReadAxiom(uint8_t pagenum, uint8_t offset, uint8_t *pbuf, uint32_t length)
 {
+    uint32_t status = SPISTATUS_READWRITEOK;
+
     if (length != 0U)
     {
         memset(&g_spi_tx_buffer[0], 0x00, SPI_TXRX_BUFFER_SIZE);
@@ -246,14 +275,11 @@ void SPI_ReadAxiom(uint8_t pagenum, uint8_t offset, uint8_t *pbuf, uint32_t leng
         spi_dma_enable(SPI_PERIPH, SPI_DMA_RECEIVE);
         spi_dma_enable(SPI_PERIPH, SPI_DMA_TRANSMIT);
 
-        // Wait for the DMA full-transfer-flag to set
-        while (!dma_flag_get(DMA_CH2, DMA_INT_FLAG_FTF))
+        // Wait for the DMA transfer to complete
+        // This function can only return eSPI_OK or eSPI_TIMEOUT
+        if (SPI_WaitForTransferToComplete() == eSPI_TIMEOUT)
         {
-            continue;
-        }
-        while (!dma_flag_get(DMA_CH1, DMA_INT_FLAG_FTF))
-        {
-            continue;
+            status = SPISTATUS_TIMEOUT;
         }
 
         // Set the nSS signal high (de-assert)
@@ -268,11 +294,19 @@ void SPI_ReadAxiom(uint8_t pagenum, uint8_t offset, uint8_t *pbuf, uint32_t leng
         // Read data is received after the command and padding bytes, so copy from there
         memcpy(&pbuf[0], &g_spi_rx_buffer[NUM_CMD_BYTES + NUM_PADDING_BYTES], length);
 
-        // Workaround - prevents axiom reporting SPI underflows
+        // Delay to prevent reading in quick succession. Need to give aXiom time to setup the next transfer.
         // Even with this delay the bridge could read ~5000 reports per second (although probably less in practice)
         // which is far more than would ever be required.
-        delay_1us(200);
+        // Only required for SPI.
+        delay_1us(SPI_COOLOFF_US);
     }
+    else
+    {
+        // Incorrect length requested
+        status = SPISTATUS_COMMS_FAILED;
+    }
+
+    return status;
 }
 
 /*******************************************************************************
@@ -345,4 +379,37 @@ static void SPI_SetNumTxBytes(uint16_t length)
 
     dma_channel_enable(DMA_CH1);
     dma_channel_enable(DMA_CH2);
+}
+
+static en_spiStatus SPI_WaitForTransferToComplete(void)
+{
+    uint32_t timeout_counter = 0U;
+    en_spiStatus status = eSPI_OK;
+
+    while((dma_flag_get(DMA_CH2, DMA_INT_FLAG_FTF) == RESET) && (timeout_counter < SPI_MAX_TIMEOUT_COUNT))
+    {
+        delay_1us(SPI_SLEEP_US);
+        timeout_counter++;
+        continue;
+    }
+
+    if (timeout_counter == SPI_MAX_TIMEOUT_COUNT)
+    {
+        status = eSPI_TIMEOUT;
+    }
+
+    timeout_counter = 0U;
+    while((dma_flag_get(DMA_CH1, DMA_INT_FLAG_FTF) == RESET) && (timeout_counter < SPI_MAX_TIMEOUT_COUNT))
+    {
+        delay_1us(SPI_SLEEP_US);
+        timeout_counter++;
+        continue;
+    }
+
+    if (timeout_counter == SPI_MAX_TIMEOUT_COUNT)
+    {
+        status = eSPI_TIMEOUT;
+    }
+
+    return status;
 }

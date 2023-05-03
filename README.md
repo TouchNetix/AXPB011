@@ -10,12 +10,11 @@ This project was developed using [this compiler](https://xpack.github.io/blog/20
 This project can be built/developed in any IDE. This README assume Eclipse is being used (other IDEs may differ, but the general method should be the same). 
 
 Make must be installed on your system:
-
 * For the makefile to run, it needs to know the location of the compiler. This can be done by creating a new system environment variable called ARM, and setting the path to the top level folder of the toolchain. For example:
-    ```
+```
     Variable name = ARM
     Variable value = C:/.../xpack-arm-none-eabi-gcc-11.2.1-1.2
-    ```
+```
 
 
 # Building the Project #
@@ -30,25 +29,26 @@ The projects will only build if the toolchain and environment variable have been
 
 Run the following command to compile and link the project:
 ```
-make all
+    make all
 ```
 
 If setup correctly, the project should build.
-
-**IMPORTANT**: There may be some warnings that look like the following:
+<br><br>
+**IMPORTANT**: There may be some warnings that look like the following, 
+these can be ignored:
 ```
-Peripherals/GD32F3x0_usbfs_library/driver/Source/drv_usb_core.c: In function 'usb_txfifo_write':
-Peripherals/GD32F3x0_usbfs_library/driver/Source/drv_usb_core.c:214:9: warning: 'packed' attribute ignored for type 'uint32_t *' {aka 'long unsigned int *'} [-Wattributes]
-  214 |         *fifo = *((__attribute__((__packed__)) uint32_t *)src_buf);
-      |         ^
-Peripherals/GD32F3x0_usbfs_library/driver/Source/drv_usb_core.c: In function 'usb_rxfifo_read':
-Peripherals/GD32F3x0_usbfs_library/driver/Source/drv_usb_core.c:237:9: warning: 'packed' attribute ignored for type 'uint32_t *' {aka 'long unsigned int *'} [-Wattributes]
-  237 |         *(__attribute__((__packed__)) uint32_t *)dest_buf = *fifo;
-      |         ^
+    Peripherals/GD32F3x0_usbfs_library/driver/Source/drv_usb_core.c: In function 'usb_txfifo_write':
+    Peripherals/GD32F3x0_usbfs_library/driver/Source/drv_usb_core.c:214:9: warning: 'packed' attribute ignored for type 'uint32_t *' {aka 'long unsigned int *'} [-Wattributes]
+    214 |         *fifo = *((__attribute__((__packed__)) uint32_t *)src_buf);
+        |         ^
+    Peripherals/GD32F3x0_usbfs_library/driver/Source/drv_usb_core.c: In function 'usb_rxfifo_read':
+    Peripherals/GD32F3x0_usbfs_library/driver/Source/drv_usb_core.c:237:9: warning: 'packed' attribute ignored for type 'uint32_t *' {aka 'long unsigned int *'} [-Wattributes]
+    237 |         *(__attribute__((__packed__)) uint32_t *)dest_buf = *fifo;
+        |         ^
 ```
-These can be ignored.
 
 # Target Device #
+
 This project targets the GD32F350K8.
 
 
@@ -80,17 +80,24 @@ This project targets the GD32F350K8.
 
 The AXPB011 relies on a custom bootloader to function correctly. The bootloader resides at the start of flash, with the runtime program starting after.
 
-The addresses are:
 ```C
-Bootloader Flash Start = 0x08000000
-Runtime Flash Start = 0x08004000
+    Bootloader Flash Start = 0x08000000
+    Runtime Flash Start = 0x08004000
 ```
 
 
 # Boot Select #
 
-The BOOT_SEL pin is read after a reset. 
-
+The BOOT_SEL pin is read after a reset.<br>
 * If the pin is read logic 1 (high) the chip will enumerate as a DFU device. 
     * The correct [DFU Driver](https://gd32mcu.com/download/down/document_id/244/path_type/1) must be installed.
 * If the pin is read logic 0 (low) the chip will run the user application, provided flash at address 0x08004000 is not blank and the chip hasn't been reset from a command.
+
+# Doxygen Generation #
+
+Still WIP, but some files have been documented. Requires an installation of [Doxygen.](https://www.doxygen.nl/download.html)<br>
+If using Doxywizard:
+* Load the doxygen project DoxyfileSetup:
+    * File->Open.
+* Point the working directory to where the AXPB011 repository is located.
+* Got to the run tab and click "Run doxygen".

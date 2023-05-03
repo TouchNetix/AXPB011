@@ -242,8 +242,8 @@ uint8_t ProcessTBPCommand(usb_core_driver *udev, uint8_t *pResponse, uint8_t whi
                 }
                 else
                 {
-                    ReadAxiom(address, &pResponse[2], numBytesRead);
-                    pResponse[0] = AXIOMCOMMS_OK;
+                    uint32_t comms_status = ReadAxiom(address, &pResponse[2], numBytesRead);
+                    pResponse[0] = comms_status;
                     pResponse[1] = numBytesRead;
                 }
             }
@@ -257,8 +257,8 @@ uint8_t ProcessTBPCommand(usb_core_driver *udev, uint8_t *pResponse, uint8_t whi
                 else
                 {
                     // We already account for the 4 command bytes, so subtract them from the total number to write
-                    WriteAxiom(address, &commandBuf[7], (commandBuf[1] - NUM_CMD_BYTES));
-                    pResponse[0] = AXIOMCOMMS_OK_NO_READ;
+                    uint32_t comms_status = WriteAxiom(address, &commandBuf[7], (commandBuf[1] - NUM_CMD_BYTES));
+                    pResponse[0] = comms_status;
                     pResponse[1] = 0; // No data read during a write
                 }
             }
@@ -269,24 +269,17 @@ uint8_t ProcessTBPCommand(usb_core_driver *udev, uint8_t *pResponse, uint8_t whi
 //-------
         case CMD_MULTIPAGE_READ:
         {
-            MultiPageSetupTypeDef setup;
-            setup.SemaphoreUsageNumber  = commandBuf[7];
-            setup.SemaphoreOffset       = commandBuf[8];
-            setup.SemaphoreStartByte    = commandBuf[9];
-            setup.SemaphoreStopByte     = commandBuf[10];
-            setup.NumTx                 = (commandBuf[1] - NUM_CMD_BYTES); // We already account for the 4 command bytes, so subtract them from the total number to write
-            setup.TotalNumRX            = (uint16_t)((commandBuf[3] << 8) | (uint16_t)commandBuf[2]);
-            setup.PageLength            = commandBuf[4];
-            setup.AddrStart             = (uint16_t)((commandBuf[6] << 8) | commandBuf[5]);
-            setup.BytesRead             = 0;
-            setup.PagesMovedThrough     = 0;
-            setup.BytesOffset           = 0;
+            MultiPageSetupTypeDef setup = {0};
+            setup.NumTx             = (commandBuf[1] - NUM_CMD_BYTES); // We already account for the 4 command bytes, so subtract them from the total number to write
+            setup.TotalNumRX        = (uint16_t)((commandBuf[3] << 8) | (uint16_t)commandBuf[2]);
+            setup.PageLength        = commandBuf[4];
+            setup.AddrStart         = (uint16_t)((commandBuf[6] << 8) | commandBuf[5]);
+            setup.BytesRead         = 0;
+            setup.PagesMovedThrough = 0;
+            setup.BytesOffset       = 0;
 
             // Store local copies of the start and stop byte sent in the command
             StoreMultipageReadInfo(&setup);
-
-            // Send the start semaphore
-            WriteSemaphore(SEMAPHORE_START);
 
             // Change the proxy mode - rest of reads will be done in main loop
             SetProxyMode(eMultiPageRead);

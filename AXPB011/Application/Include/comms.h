@@ -45,8 +45,10 @@
 /*******************************************************************************
  * Constants (including enums)
  ******************************************************************************/
-#define AXIOMCOMMS_OK               (0x00U)
-#define AXIOMCOMMS_OK_NO_READ       (0x04U)
+#define AXIOMCOMMS_READWRITE_OK     (0x00U)
+#define AXIOMCOMMS_COMMS_FAILED     (0x01U)
+#define AXIOMCOMMS_DEVICE_TIMEOUT   (0x02U)
+#define AXIOMCOMMS_WRITE_OK_NOREAD  (0x04U)
 #define AXIOMCOMMS_INCORRECTSETUP   (0xFFU)
 
 #define NIRQ_GPIO_PORT      (GPIOB)
@@ -77,8 +79,8 @@ typedef enum
 void        CommsInit(void);
 void        CommsDeInit(void);
 void        SetAxiomCommsMode(uint8_t comms_mode);
-void        WriteAxiom(uint16_t addr, uint8_t *pbuf, uint32_t length);
-void        ReadAxiom(uint16_t addr, uint8_t *pbuf, uint32_t length);
+uint32_t    WriteAxiom(uint16_t addr, uint8_t *pbuf, uint32_t length);
+uint32_t    ReadAxiom(uint16_t addr, uint8_t *pbuf, uint32_t length);
 en_comms    GetCommsMode(void);
 uint32_t    GetAxiomI2CAddress(void);
 void        ResetAxiom(void);

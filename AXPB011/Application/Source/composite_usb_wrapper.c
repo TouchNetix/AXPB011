@@ -66,7 +66,7 @@
 #define USBD_PID                (0x0000U)   // Updated during init
 
 #define DEVICE_FW_VERSION_MAJOR (0x01U)
-#define DEVICE_FW_VERSION_MINOR (0x01U)
+#define DEVICE_FW_VERSION_MINOR (0x02U)
 
 #define DEVICE_FW_VERSION       ((uint16_t)((DEVICE_FW_VERSION_MAJOR << 8U) | (DEVICE_FW_VERSION_MINOR)))
 

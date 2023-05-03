@@ -154,25 +154,80 @@ void SetAxiomCommsMode(uint8_t comms_mode)
  * @param[in]   offset  Offset into page to be written to.
  * @param[in]   pbuf    Pointer to the data to be sent.
  * @param[in]   length  Number of bytes to write.
- * @return  None.
+ * @return  Status of comms.
+ * @retval  AXIOMCOMMS_READWRITE_OK      Bridge successfully read from aXiom.
+ * @retval  AXIOMCOMMS_COMMS_FAILED      Bridge could not communicate with aXiom (either through invalid setup or other error).
+ * @retval  AXIOMCOMMS_DEVICE_TIMEOUT    aXiom did not respond to the bridge in time (I2C only).
+ * @retval  AXIOMCOMMS_WRITE_OK_NOREAD   Bridge successfully wrote to aXiom.
  */
-void WriteAxiom(uint16_t addr, uint8_t *pbuf, uint32_t length)
+uint32_t WriteAxiom(uint16_t addr, uint8_t *pbuf, uint32_t length)
 {
-    uint8_t pagenum = (addr & 0xFF00) >> 8;
-    uint8_t offset = addr & 0x00FF;
+    uint32_t status = AXIOMCOMMS_WRITE_OK_NOREAD;
+    uint8_t pagenum = (uint8_t)((addr & 0xFF00U) >> 8U);
+    uint8_t offset = (uint8_t)(addr & 0x00FFU);
 
     switch (g_comms_select)
     {
         case eI2C:
         {
-            I2C_WriteAxiom(pagenum, offset, pbuf, length);
+            uint32_t i2c_retval = I2C_WriteAxiom(pagenum, offset, pbuf, length);
+
+            switch(i2c_retval)
+            {
+                case I2CSTATUS_WRITE_OK_NOREAD:
+                {
+                    status = AXIOMCOMMS_WRITE_OK_NOREAD;
+                    break;
+                }
+
+                case I2CSTATUS_TIMEOUT:
+                {
+                    status = AXIOMCOMMS_DEVICE_TIMEOUT;
+                    break;
+                }
+
+                case I2CSTATUS_COMMS_FAILED:
+                case I2CSTATUS_READWRITEOK:
+                default:
+                {
+                    // Either comms has actually failed, or somehow we got here through incorrect setup
+                    status = AXIOMCOMMS_COMMS_FAILED;
+                    break;
+                }
+            }
+
             NotifyAxiomComms();
             break;
         }
 
         case eSPI:
         {
-            SPI_WriteAxiom(pagenum, offset, pbuf, length);
+            uint32_t spi_retval = SPI_WriteAxiom(pagenum, offset, pbuf, length);
+
+            switch(spi_retval)
+            {
+                case SPISTATUS_WRITE_OK_NOREAD:
+                {
+                    status = AXIOMCOMMS_WRITE_OK_NOREAD;
+                    break;
+                }
+
+                case SPISTATUS_TIMEOUT:
+                {
+                    status = AXIOMCOMMS_DEVICE_TIMEOUT;
+                    break;
+                }
+
+                case SPISTATUS_COMMS_FAILED:
+                case SPISTATUS_READWRITEOK:
+                default:
+                {
+                    // Either comms has actually failed, or somehow we got here through incorrect setup
+                    status = AXIOMCOMMS_COMMS_FAILED;
+                    break;
+                }
+            }
+
             NotifyAxiomComms();
             break;
         }
@@ -181,9 +236,12 @@ void WriteAxiom(uint16_t addr, uint8_t *pbuf, uint32_t length)
         default:
         {
             // Do nothing - no comms interface selected
+            status = AXIOMCOMMS_COMMS_FAILED;
             break;
         }
     }
+
+    return status;
 }
 
 /**
@@ -192,10 +250,15 @@ void WriteAxiom(uint16_t addr, uint8_t *pbuf, uint32_t length)
  * @param[in]   offset  Offset into page to be written to.
  * @param[out]  pbuf    Pointer to buffer where read data will be stored.
  * @param[in]   length  Number of bytes to read.
- * @return  None.
+ * @return  Status of comms.
+ * @retval  AXIOMCOMMS_READWRITE_OK      Bridge successfully read from aXiom.
+ * @retval  AXIOMCOMMS_COMMS_FAILED      Bridge could not communicate with aXiom (either through invalid setup or other error).
+ * @retval  AXIOMCOMMS_DEVICE_TIMEOUT    aXiom did not respond to the bridge in time (I2C only).
+ * @retval  AXIOMCOMMS_WRITE_OK_NOREAD   Bridge successfully wrote to aXiom.
  */
-void ReadAxiom(uint16_t addr, uint8_t *pbuf, uint32_t length)
+uint32_t ReadAxiom(uint16_t addr, uint8_t *pbuf, uint32_t length)
 {
+    uint32_t status = AXIOMCOMMS_READWRITE_OK;
     uint8_t pagenum = (addr & 0xFF00) >> 8;
     uint8_t offset = addr & 0x00FF;
 
@@ -203,14 +266,62 @@ void ReadAxiom(uint16_t addr, uint8_t *pbuf, uint32_t length)
     {
         case eI2C:
         {
-            I2C_ReadAxiom(pagenum, offset, pbuf, length);
+            uint32_t i2c_retval = I2C_ReadAxiom(pagenum, offset, pbuf, length);
+            switch(i2c_retval)
+            {
+                case I2CSTATUS_READWRITEOK:
+                {
+                    status = AXIOMCOMMS_WRITE_OK_NOREAD;
+                    break;
+                }
+
+                case I2CSTATUS_TIMEOUT:
+                {
+                    status = AXIOMCOMMS_DEVICE_TIMEOUT;
+                    break;
+                }
+
+                case I2CSTATUS_COMMS_FAILED:
+                case I2CSTATUS_WRITE_OK_NOREAD:
+                default:
+                {
+                    // Either comms has actually failed, or somehow we got here through incorrect setup
+                    status = AXIOMCOMMS_COMMS_FAILED;
+                    break;
+                }
+            }
+
             NotifyAxiomComms();
             break;
         }
 
         case eSPI:
         {
-            SPI_ReadAxiom(pagenum, offset, pbuf, length);
+            uint32_t spi_retval = SPI_ReadAxiom(pagenum, offset, pbuf, length);
+            switch(spi_retval)
+            {
+                case SPISTATUS_READWRITEOK:
+                {
+                    status = AXIOMCOMMS_WRITE_OK_NOREAD;
+                    break;
+                }
+
+                case SPISTATUS_TIMEOUT:
+                {
+                    status = AXIOMCOMMS_DEVICE_TIMEOUT;
+                    break;
+                }
+
+                case SPISTATUS_COMMS_FAILED:
+                case SPISTATUS_WRITE_OK_NOREAD:
+                default:
+                {
+                    // Either comms has actually failed, or somehow we got here through incorrect setup
+                    status = AXIOMCOMMS_COMMS_FAILED;
+                    break;
+                }
+            }
+
             NotifyAxiomComms();
             break;
         }
@@ -222,6 +333,8 @@ void ReadAxiom(uint16_t addr, uint8_t *pbuf, uint32_t length)
             break;
         }
     }
+
+    return status;
 }
 
 /**

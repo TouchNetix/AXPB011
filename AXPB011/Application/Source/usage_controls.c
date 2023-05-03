@@ -75,7 +75,7 @@ static uint16_t g_u34_addr = 0;
 /*******************************************************************************
  * File Scope Function Prototypes
  ******************************************************************************/
-static uint8_t GetSemaphoreStartStop(uint8_t start_stop);
+
 
 /*******************************************************************************
  * Exported Function Definitions
@@ -145,59 +145,6 @@ MultiPageSetupTypeDef *GetMultiPageReadInfo(void)
     return &g_MultipageReadInfo;
 }
 
-/**
- * @brief   Write semaphore start or stop byte to the desired usage.
- * @param[in]   semaphore_page_num  Page number where the semaphore is to be written to.
- * @param[in]   semaphore_offset    Offset into page where the semaphore is to be written to.
- * @param[in]   start_stop  Indicates if we're sending the start or stop byte.
- */
-void WriteSemaphore(uint8_t start_stop)
-{
-    int8_t usage_idx = FindUsageInTable(g_MultipageReadInfo.SemaphoreUsageNumber);
-
-    // Set the address of the usage we want to write the semaphore to
-    uint16_t target_address = ((g_usagetable[usage_idx].startpage << 8) & 0xFF00) & (g_MultipageReadInfo.SemaphoreOffset & 0xFF);
-
-    // Send the start or stop byte (determined by function parameter)
-    uint8_t sempahore_byte_write = 0;
-
-    if (start_stop == SEMAPHORE_START)
-    {
-        sempahore_byte_write = GetSemaphoreStartStop(SEMAPHORE_START);
-    }
-    else
-    {
-        sempahore_byte_write = GetSemaphoreStartStop(SEMAPHORE_STOP);
-    }
-
-    WriteAxiom(target_address, &sempahore_byte_write, 1);
-
-    // Wait for the change to happen in axiom
-    uint8_t sempahore_byte_read = 0;
-    uint8_t retry = 0;
-    while ((sempahore_byte_read != sempahore_byte_write) && (retry < MAX_RETRY_NUM))
-    {
-        delay_1ms(10);
-        ReadAxiom(target_address, &sempahore_byte_read, 1);
-
-        retry++;
-    }
-}
 /*******************************************************************************
  * File Scope Function Definitions
  ******************************************************************************/
-static uint8_t GetSemaphoreStartStop(uint8_t start_stop)
-{
-    uint8_t semaphore = 0;
-
-    if (start_stop == SEMAPHORE_START)
-    {
-        semaphore = g_MultipageReadInfo.SemaphoreStartByte;
-    }
-    else
-    {
-        semaphore = g_MultipageReadInfo.SemaphoreStopByte;
-    }
-
-    return semaphore;
-}
