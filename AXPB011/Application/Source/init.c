@@ -338,38 +338,47 @@ static enUsageTableState ReadAndBuildUsageTable(void)
     uint8_t temp_buffer[DEVICE_INFO_LENGTH] = {0};
     uint8_t num_usages = 0;
 
-    ReadAxiom(DEVICE_INFO_ADDRESS, temp_buffer, DEVICE_INFO_LENGTH);
-    num_usages = temp_buffer[NUM_USAGES_OFFSET];
-
-    // Check is axiom is connected and able to communicate
-    if (CheckAxiomPresence(temp_buffer) == enAxiomNotFound)
+    // Check nIRQ state, if aXiom is ready it will pull it low (indicating report to read)
+    if (gpio_input_bit_get(NIRQ_GPIO_PORT, NIRQ_PIN) == RESET)
     {
+        ReadAxiom(DEVICE_INFO_ADDRESS, temp_buffer, DEVICE_INFO_LENGTH);
+        num_usages = temp_buffer[NUM_USAGES_OFFSET];
+
+        // Check is axiom is connected and able to communicate
+        if (CheckAxiomPresence(temp_buffer) == enAxiomNotFound)
+        {
+            return enUsageTableEmpty;
+        }
+
+        // Prevents a memory leak, although requires updating this firmware if this ever changes
+        if (num_usages > MAX_NUM_USAGES)
+        {
+            num_usages = MAX_NUM_USAGES;
+        }
+
+        // Parse the usage table from axiom and store a local copy
+        ClearLocalUsageTable();
+
+        uint8_t  usagetable_buffer[6U] = {0};
+        uint16_t next_addr = USAGE_TABLE_ADDRESS;
+        uint8_t  usage_table_idx = 0;
+
+        while (usage_table_idx < num_usages)
+        {
+            ReadAxiom(next_addr, usagetable_buffer, USAGE_ENTRY_SIZE);
+            SaveUsageInLocalTable(usage_table_idx, usagetable_buffer, USAGE_ENTRY_SIZE);
+
+            next_addr += USAGE_ENTRY_SIZE;
+            usage_table_idx++;
+        }
+
+        return enUsageTableParsed;
+    }
+    else
+    {
+        // aXiom not ready for comms yet
         return enUsageTableEmpty;
     }
-
-    // Prevents a memory leak, although requires updating this firmware if this ever changes
-    if (num_usages > MAX_NUM_USAGES)
-    {
-        num_usages = MAX_NUM_USAGES;
-    }
-
-    // Parse the usage table from axiom and store a local copy
-    ClearLocalUsageTable();
-
-    uint8_t  usagetable_buffer[6U] = {0};
-    uint16_t next_addr = USAGE_TABLE_ADDRESS;
-    uint8_t  usage_table_idx = 0;
-
-    while (usage_table_idx < num_usages)
-    {
-        ReadAxiom(next_addr, usagetable_buffer, USAGE_ENTRY_SIZE);
-        SaveUsageInLocalTable(usage_table_idx, usagetable_buffer, USAGE_ENTRY_SIZE);
-
-        next_addr += USAGE_ENTRY_SIZE;
-        usage_table_idx++;
-    }
-
-    return enUsageTableParsed;
 }
 
 static eAxiomConnectionStatus CheckAxiomPresence(uint8_t *pBuf)
