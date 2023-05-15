@@ -271,7 +271,7 @@ uint32_t ReadAxiom(uint16_t addr, uint8_t *pbuf, uint32_t length)
             {
                 case I2CSTATUS_READWRITEOK:
                 {
-                    status = AXIOMCOMMS_WRITE_OK_NOREAD;
+                    status = AXIOMCOMMS_READWRITE_OK;
                     break;
                 }
 
@@ -302,7 +302,7 @@ uint32_t ReadAxiom(uint16_t addr, uint8_t *pbuf, uint32_t length)
             {
                 case SPISTATUS_READWRITEOK:
                 {
-                    status = AXIOMCOMMS_WRITE_OK_NOREAD;
+                    status = AXIOMCOMMS_READWRITE_OK;
                     break;
                 }
 
