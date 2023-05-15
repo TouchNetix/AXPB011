@@ -88,16 +88,17 @@ static uint32_t g_axiom_i2c_addr = 0;
 #define I2C_SDA_GPIO_PORT   (GPIOB)
 #define I2C_SDA_PIN         (GPIO_PIN_7)
 
-#define I2C_FASTMODE            (400000U)
-#define MAX_ADDRSEND_ATTEMPTS   (4U)
-#define EEPROM_ADDRESS          (0xA0U >> 1U)
-#define NUM_CMD_BYTES           (4U)
-#define USB_MAX_DATA_SIZE       (58U)   // max usb packet size (64) minus 2 bridge header bytes and 4 axiom command bytes
-#define I2C_TXRX_BUFFER_SIZE    (NUM_CMD_BYTES + USB_MAX_DATA_SIZE)
-#define WRITE                   (0x00U)
-#define READ                    (0x80U)
-#define ADDSEND_DONTCLEAR       (0)
-#define ADDSEND_CLEAR           (1U)
+#define I2C_FASTMODE                (400000U)
+#define MAX_ADDRSEND_ATTEMPTS       (10U)
+#define MAX_ADDR_SEARCH_ATTEMPTS    (250U)
+#define NO_AXIOM_FOUND_ADDR         (0)
+#define NUM_CMD_BYTES               (4U)
+#define USB_MAX_DATA_SIZE           (58U)   // max usb packet size (64) minus 2 bridge header bytes and 4 axiom command bytes
+#define I2C_TXRX_BUFFER_SIZE        (NUM_CMD_BYTES + USB_MAX_DATA_SIZE)
+#define WRITE                       (0x00U)
+#define READ                        (0x80U)
+#define ADDSEND_DONTCLEAR           (0)
+#define ADDSEND_CLEAR               (1U)
 
 /*******************************************************************************
  * File Scope Inline Functions
@@ -704,112 +705,79 @@ static void SetI2CAddress(uint32_t addr)
 
 /**
  * @brief   Scans the 7-bit i2c address range looking for a device to connect to.
- * @details aXiom typically has address 0x66 or 0x67. Addresses 0x00 (general call)
- *          and 0x50 (EVAL board EEPROM) are skipped.
+ * @details aXiom typically has address 0x66 or 0x67.
  * @return  Address of connected device, in 7-bit format, left shifted by 1.
  */
 static uint32_t FindI2CAddress(void)
 {
-    uint8_t     buffer[1] = {0};
-    uint8_t     timeout_flag = 0;
+    uint8_t     retryCount = 0;
     uint32_t    temp_addr;
+    bool        addressFound = FALSE;
 
-    // Find address of connected device - 0x00 is general call address so skip it
-    for (temp_addr = 0x01; temp_addr < 0x7E; temp_addr++)
+    // Waits for a maximum of ~12.5 seconds for aXiom to ACK an address request
+    do
     {
-        if (temp_addr == EEPROM_ADDRESS)
+        for (temp_addr = 0x66U; temp_addr < 0x68U; temp_addr++)
         {
-            // 0xA0 is the I2C EEPROM address (EVAL board only)
-            continue;
-        }
+            // Configure with the next i2c address
+            i2c_mode_addr_config(I2C_PERIPH, I2C_I2CMODE_ENABLE, I2C_ADDFORMAT_7BITS, (temp_addr << 1U));
 
-        // Configure with the next i2c address
-        i2c_mode_addr_config(I2C_PERIPH, I2C_I2CMODE_ENABLE, I2C_ADDFORMAT_7BITS, (temp_addr << 1U));
+            // Some of these functions have timeout capability, however we are not concerned about the result,
+            // as we are only interested when aXiom responds and not when it is not responsive (which it will be
+            // until it has finished its start-up sequneces).
 
-        // Wait until I2C bus is idle
-        while (i2c_flag_get(I2C_PERIPH, I2C_FLAG_I2CBSY))
-        {
-            continue;
-        }
+            // Wait until I2C bus is idle
+            (void)I2C_WaitForIdleBus();
 
-        // Send a start condition to I2C bus
-        i2c_start_on_bus(I2C_PERIPH);
-        while (!i2c_flag_get(I2C_PERIPH, I2C_FLAG_SBSEND))
-        {
-            continue;
-        }
+            // Send a start condition to I2C bus
+            (void)I2C_SendStartToBus();
 
-        // Send the current address to the device
-        i2c_master_addressing(I2C_PERIPH, (temp_addr << 1U), I2C_TRANSMITTER);
+            // Send the current address to the device
+            i2c_master_addressing(I2C_PERIPH, (temp_addr << 1U), I2C_TRANSMITTER);
 
-        // If the address is correct the ADDSEND (address send) flag will be raised
-        timeout_flag = 0;
-        for (uint32_t timeout = 0; timeout <= MAX_ADDRSEND_ATTEMPTS; timeout++)
-        {
-            if (i2c_flag_get(I2C_PERIPH, I2C_FLAG_ADDSEND))
+            // If the address is correct the ADDSEND (address send) flag will be raised
+            for (uint32_t timeout = 0; timeout <= MAX_ADDRSEND_ATTEMPTS; timeout++)
             {
-                // Pass
-                i2c_flag_clear(I2C_PERIPH, I2C_FLAG_ADDSEND);
-                timeout_flag = 0;
-                break;
-            }
-
-            if (timeout == MAX_ADDRSEND_ATTEMPTS)
-            {
-                // Fail
-                timeout_flag = 1;
-
-                // Need to clear this flag as there will have been an ACK error
-                i2c_flag_clear(I2C_PERIPH, I2C_FLAG_AERR);
-                break;
-            }
-
-            // Gives the ADDSEND flag time to assert
-            delay_1us(I2C_SLEEP_US);
-        }
-
-        if (timeout_flag == 0)
-        {
-            // Transmit an empty byte
-            i2c_data_transmit(I2C_PERIPH, buffer[0]);
-            while (!i2c_flag_get(I2C0, I2C_FLAG_TBE))
-            {
-                continue;
-            }
-
-            // Check for ACK status
-            if (i2c_flag_get(I2C_PERIPH, I2C_FLAG_AERR))
-            {
-                // Fail
-                i2c_flag_clear(I2C_PERIPH, I2C_FLAG_AERR);
-            }
-            else
-            {
-                // Pass - Device has been found
-                // Send a stop and exit loop
-                i2c_stop_on_bus(I2C_PERIPH);
-                while (I2C_CTL0(I2C_PERIPH) & I2C_CTL0_STOP)
+                if (i2c_flag_get(I2C_PERIPH, I2C_FLAG_ADDSEND))
                 {
-                    continue;
+                    // Pass
+                    addressFound = TRUE;
+
+                    i2c_flag_clear(I2C_PERIPH, I2C_FLAG_ADDSEND);
+                    break;
                 }
 
+                if (timeout == MAX_ADDRSEND_ATTEMPTS)
+                {
+                    // Fail
+                    // Need to clear this flag as there will have been an ACK error
+                    i2c_flag_clear(I2C_PERIPH, I2C_FLAG_AERR);
+                    break;
+                }
+
+                // Gives the ADDSEND flag time to assert
+                delay_1us(I2C_SLEEP_US);
+            }
+
+            // Send a stop condition to I2C bus and wait for stop condition to be generated
+            I2C_SendStopToBus();
+
+            if (addressFound == TRUE)
+            {
+                // aXiom found - break out of temp_addr for() loop
                 break;
             }
-       }
-
-        // Send a stop condition to I2C bus and wait for stop condition to be generated
-        i2c_stop_on_bus(I2C_PERIPH);
-        while (I2C_CTL0(I2C_PERIPH) & I2C_CTL0_STOP)
-        {
-            continue;
         }
-    }
 
-    if (temp_addr == 0x7E)
+        // Sleep for a bit before trying again
+        delay_1ms(50U);
+        retryCount++;
+    } while ((addressFound == FALSE) && (retryCount < MAX_ADDR_SEARCH_ATTEMPTS));
+
+    if (retryCount >= MAX_ADDR_SEARCH_ATTEMPTS)
     {
-        temp_addr = 0;
+        temp_addr = NO_AXIOM_FOUND_ADDR;
     }
 
-    // Returns 0 if the device could not be found;
     return (temp_addr << 1U);
 }
