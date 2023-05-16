@@ -158,19 +158,19 @@ uint8_t DeviceInit(usb_core_driver *pDevice)
     LEDsInit();
 
     // If no USB host is detected, put axiom in I2C mode then de-initialise all GPIOs and do nothing forever
-    if (CheckUSBHostPresence() == USB_HOST_ABSENT)
+    if ( CheckUSBHostPresence() == USB_HOST_ABSENT )
     {
         // Still need to use GPIO port A
-        rcu_periph_clock_disable(RCU_GPIOB);
-        rcu_periph_clock_disable(RCU_GPIOC);
-        rcu_periph_clock_disable(RCU_DMA);
-        gpio_deinit(GPIOA);
-        gpio_deinit(GPIOB);
-        gpio_deinit(GPIOC);
+        rcu_periph_clock_disable( RCU_GPIOB );
+        rcu_periph_clock_disable( RCU_GPIOC );
+        rcu_periph_clock_disable( RCU_DMA   );
+        gpio_deinit( GPIOA );
+        gpio_deinit( GPIOB );
+        gpio_deinit( GPIOC );
 
         // Don't release the nSLVI2C/MISO line - if the new host resets axiom it should remain in I2C mode
         // TODO let go of nRESET
-        SetAxiomCommsMode(I2C_MODE);
+        SetAxiomCommsMode( I2C_MODE );
         status = USB_HOST_ABSENT;
     }
     else
@@ -178,19 +178,31 @@ uint8_t DeviceInit(usb_core_driver *pDevice)
         status = USB_HOST_DETECTED;
     }
 
-    // Configure the rest of the peripherals and reset axiom to put it in the correct comms mode - axiom reset during comms init
-    CommsInit();
+    // Configure the rest of the peripherals and reset axiom to put it in the correct comms mode (during comms init)
     TimerInit();
+    CommsInit();
 
-    enUsageTableState usagetable_status = ParseUsageTable();
+    enUsageTableState usagetable_status = enUsageTableEmpty;
+
+    // If we're in I2C mode and aXiom hasn't been found, don't bother trying to read the usage table.
+    // We've waited ~12s already, so just come up in Bridge Only mode (won't be able to read usage table anyway).
+    if ( ( GetCommsMode() == eSPI ) ||
+            ( ( GetCommsMode() == eI2C ) && ( GetAxiomI2CAddress() != 0) ) )
+    {
+        usagetable_status = ParseUsageTable();
+    }
+
+    // Return both LEDs to the same state
+    gpio_bit_write(LED_AXIOM_GPIO_PORT, LED_AXIOM_GPIO_PIN, RESET);
+    gpio_bit_write(LED_USB_GPIO_PORT, LED_USB_GPIO_PIN, RESET);
 
     // Enable USB - happens last when everything else is set up (at this point we are ready to connect to the host)
-    USB_FS_Init(pDevice);
+    USB_FS_Init( pDevice );
 
-    if (usagetable_status == enUsageTableEmpty)
+    if ( usagetable_status == enUsageTableEmpty )
     {
         // Usage table couldn't be parsed, meaning axiom couldn't be connected to - no reports to read!
-        SetProxyMode(eProxyStop);
+        SetProxyMode( eProxyStop );
     }
     else
     {
@@ -274,11 +286,11 @@ static enUsageTableState ParseUsageTable(void)
 {
     // The following do-while loop will run for ~12.5 seconds if no axiom can be found.
     // (Enough time for axiom to exit bootloader)
-    gpio_bit_write(LED_AXIOM_GPIO_PORT, LED_AXIOM_GPIO_PIN, SET);
-    gpio_bit_write(LED_USB_GPIO_PORT, LED_USB_GPIO_PIN, RESET);
     uint8_t retry = 0;
-    uint8_t led_count = 0;
     enUsageTableState usagetable_status = enUsageTableEmpty;
+
+    // Starting this timer starts to alternate the LEDs (searching for aXiom mode)
+    timer_enable(STARTUP_LED_TIMER);
 
     do
     {
@@ -292,26 +304,13 @@ static enUsageTableState ParseUsageTable(void)
         {
             // Wait for a bit before trying again
             delay_1ms(50);
-
-            // Flash LEDs
-            if(led_count > 1)
-            {
-                gpio_bit_toggle(LED_AXIOM_GPIO_PORT, LED_AXIOM_GPIO_PIN);
-                gpio_bit_toggle(LED_USB_GPIO_PORT, LED_USB_GPIO_PIN);
-                led_count = 0;
-            }
-            else
-            {
-                led_count++;
-            }
         }
 
         retry++;
     } while(retry < USAGETABLE_MAX_RETRY_NUM);
 
-    // Turn both LEDs off again
-    gpio_bit_write(LED_AXIOM_GPIO_PORT, LED_AXIOM_GPIO_PIN, RESET);
-    gpio_bit_write(LED_USB_GPIO_PORT, LED_USB_GPIO_PIN, RESET);
+    // Clean up in this function - better than relying on an external function having to disable this for us
+    timer_disable(STARTUP_LED_TIMER);
 
     return usagetable_status;
 }

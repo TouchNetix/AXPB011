@@ -91,11 +91,15 @@ void CommsInit(void)
 {
     g_comms_select = GetCommsMode();
 
-
     if (g_comms_select == eI2C)
     {
+        // Starting this timer starts to alternate the LEDs (searching for aXiom mode)
+        timer_enable(STARTUP_LED_TIMER);
         SetAxiomCommsMode(I2C_MODE);
         I2C_Init();
+
+        // Clean up in this function - better than relying on an external function having to disable this for us
+        timer_disable(STARTUP_LED_TIMER);
     }
     else if (g_comms_select == eSPI)
     {

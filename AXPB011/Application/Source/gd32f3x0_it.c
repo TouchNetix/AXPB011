@@ -281,6 +281,35 @@ void TIMER13_IRQHandler(void)
     }
 }
 
+/**
+  * @brief  This function handles TIMER14 interrupt request.
+  * @param  None
+  * @retval None
+  */
+void TIMER14_IRQHandler(void)
+{
+    static uint8_t led_count = 0;
+
+    if (timer_interrupt_flag_get(TIMER14, TIMER_INT_UP) == SET)
+    {
+        // Clear update interrupt bit
+        timer_interrupt_flag_clear(TIMER14, TIMER_INT_UP);
+
+        // Slow down the LEDs some more still
+        if(led_count > 1)
+        {
+            // Toggle the LEDs
+            gpio_bit_toggle(LED_AXIOM_GPIO_PORT, LED_AXIOM_GPIO_PIN);
+            gpio_bit_toggle(LED_USB_GPIO_PORT, LED_USB_GPIO_PIN);
+            led_count = 0;
+        }
+        else
+        {
+            led_count++;
+        }
+    }
+}
+
 /*!
     \brief      this function handles EXTI4_15_IRQ Handler.
     \param[in]  none

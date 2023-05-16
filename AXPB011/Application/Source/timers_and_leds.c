@@ -75,6 +75,7 @@ uint8_t g_usb_comms = NO_USB_COMMS;
  ******************************************************************************/
 static void DigitizerTimerInit(void);
 static void ProxyStartDelayTimerInit(void);
+static void StartupLEDTimerInit(void);
 static void DetectCommsInactivity(uint8_t axiom_comms, uint8_t usb_comms);
 
 /*******************************************************************************
@@ -89,6 +90,10 @@ void TimerInit(void)
     // Initialise proxy startup delay timer
     // DON'T enable yet, it will be enabled as a one shot
     ProxyStartDelayTimerInit();
+
+    // Initialise timer used to flash the LEDs when searching for aXiom.
+    // Don't enable yet though
+    StartupLEDTimerInit();
 }
 
 /**
@@ -103,6 +108,10 @@ void LEDsInit(void)
     gpio_mode_set(LED_AXIOM_GPIO_PORT, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, LED_AXIOM_GPIO_PIN);
     gpio_output_options_set(LED_AXIOM_GPIO_PORT, GPIO_OTYPE_PP, GPIO_OSPEED_50MHZ, LED_AXIOM_GPIO_PIN);
     gpio_bit_write(LED_AXIOM_GPIO_PORT, LED_AXIOM_GPIO_PIN, RESET);
+
+    // Start LEDs with this on-off offset, allows us to toggle them to 'blink' during startup
+    gpio_bit_write(LED_AXIOM_GPIO_PORT, LED_AXIOM_GPIO_PIN, SET);
+    gpio_bit_write(LED_USB_GPIO_PORT, LED_USB_GPIO_PIN, RESET);
 }
 
 void StartProxyDelayTimer(void)
@@ -241,6 +250,37 @@ static void ProxyStartDelayTimerInit(void)
     nvic_irq_enable(TIMER13_IRQn, 0, 0);
 }
 
+static void StartupLEDTimerInit(void)
+{
+    timer_parameter_struct timer_initpara;
+
+    // Enable the peripherals clock
+    rcu_periph_clock_enable(RCU_TIMER14);
+
+    // Deinit a TIMER
+    timer_deinit(STARTUP_LED_TIMER);
+
+    // Initialize TIMER init parameter struct
+    timer_struct_para_init(&timer_initpara);
+
+    // TIMER2 configuration
+    timer_initpara.prescaler         = SYSTEMCLOCK_IN_MHZ - 1;
+    timer_initpara.alignedmode       = TIMER_COUNTER_EDGE;
+    timer_initpara.counterdirection  = TIMER_COUNTER_UP;
+    timer_initpara.period            = 50000 - 1; // 150ms period
+    timer_initpara.clockdivision     = TIMER_CKDIV_DIV1;
+    timer_init(STARTUP_LED_TIMER, &timer_initpara);
+
+    // Clear interrupt bit
+    timer_interrupt_flag_clear(STARTUP_LED_TIMER, TIMER_INT_FLAG_UP);
+
+    // Enable the TIMER interrupt
+    timer_interrupt_enable(STARTUP_LED_TIMER, TIMER_INT_UP);
+
+    // Enable interrupts
+    nvic_irq_enable(TIMER14_IRQn, 0, 0);
+}
+
 static void DetectCommsInactivity(uint8_t axiom_comms, uint8_t usb_comms)
 {
     static uint32_t heartbeat_axiom_count = 0;
@@ -257,6 +297,7 @@ static void DetectCommsInactivity(uint8_t axiom_comms, uint8_t usb_comms)
             if(heartbeat_axiom_count >= 29000)
             {
                 gpio_bit_write(LED_AXIOM_GPIO_PORT, LED_AXIOM_GPIO_PIN, RESET);
+                delay_1ms(50);
                 heartbeat_axiom_count = 0;
             }
             else
@@ -284,6 +325,7 @@ static void DetectCommsInactivity(uint8_t axiom_comms, uint8_t usb_comms)
             if(heartbeat_usb_count >= 29000)
             {
                 gpio_bit_write(LED_USB_GPIO_PORT, LED_USB_GPIO_PIN, RESET);
+                delay_1ms(50);
                 heartbeat_usb_count = 0;
             }
             else

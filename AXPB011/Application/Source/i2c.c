@@ -774,7 +774,7 @@ static uint32_t FindI2CAddress(void)
         retryCount++;
     } while ((addressFound == FALSE) && (retryCount < MAX_ADDR_SEARCH_ATTEMPTS));
 
-    if (retryCount >= MAX_ADDR_SEARCH_ATTEMPTS)
+    if (addressFound == FALSE)
     {
         temp_addr = NO_AXIOM_FOUND_ADDR;
     }

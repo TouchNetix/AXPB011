@@ -47,6 +47,7 @@
  ******************************************************************************/
 #define DIGITIZER_TIMER         (TIMER1)
 #define PROXY_DELAY_TIMER       (TIMER13)
+#define STARTUP_LED_TIMER       (TIMER14)
 
 #define AXIOM_COMMS_DETECTED    (1U)
 #define NO_AXIOM_COMMS          (0U)
