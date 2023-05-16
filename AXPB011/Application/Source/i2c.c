@@ -111,7 +111,7 @@ static uint32_t g_axiom_i2c_addr = 0;
 static en_i2cStatus I2C_WaitForIdleBus(void);
 static en_i2cStatus I2C_PopulateCommandBytes(uint8_t *pBuffer, uint8_t pagenum, uint8_t offset, uint32_t length, uint8_t read_write);
 static en_i2cStatus I2C_SendStartToBus(void);
-static void         I2C_SendStopToBus(void);
+static en_i2cStatus I2C_SendStopToBus(void);
 static en_i2cStatus I2C_Transmit(uint8_t *pdata, uint32_t length);
 static en_i2cStatus I2C_Receive(uint8_t *pbuf, uint32_t length);
 static en_i2cStatus I2C_SendAddress(uint32_t read_write, uint8_t clear_addsend);
@@ -345,7 +345,7 @@ static en_i2cStatus I2C_PopulateCommandBytes(uint8_t *pBuffer, uint8_t pagenum, 
 
 /**
  * @brief   Sends the start condition to the I2C bus with a timeout.
- * @retval  I2C status: eI2C_Fail, eI2C_TIMEOUT or eI2C_OK.
+ * @retval  I2C status: eI2C_TIMEOUT or eI2C_OK.
  */
 static en_i2cStatus I2C_SendStartToBus(void)
 {
@@ -372,22 +372,36 @@ static en_i2cStatus I2C_SendStartToBus(void)
 
 /**
  * @brief   Sends the stop condition to the I2C bus with a timeout.
+ * @retval  I2C status: eI2C_TIMEOUT or eI2C_OK.
  */
-static void I2C_SendStopToBus(void)
+static en_i2cStatus I2C_SendStopToBus(void)
 {
-    // No need for timeout, not waiting for slave to ACK
+    en_i2cStatus status = eI2C_OK;
+    uint32_t timeout_counter = 0;
+
     i2c_stop_on_bus(I2C_PERIPH);
-    while (I2C_CTL0(I2C_PERIPH) & I2C_CTL0_STOP)
+    while ((I2C_CTL0(I2C_PERIPH) & I2C_CTL0_STOP) && (timeout_counter < I2C_MAX_TIMEOUT_COUNT))
     {
+        delay_1us(I2C_SLEEP_US);
+        timeout_counter++;
         continue;
     }
+
+    if (timeout_counter == I2C_MAX_TIMEOUT_COUNT)
+    {
+        // Clear flag (set as a result of device not responding/present)
+        i2c_flag_clear(I2C_PERIPH, I2C_FLAG_AERR);
+        status = eI2C_TIMEOUT;
+    }
+
+    return status;
 }
 
 /**
  * @brief   Enacts the data write to the I2C bus.
  * @param[in]   pbuf    Pointer to the data to be sent.
  * @param[in]   length  Number of bytes to write.
- * @retval  I2C status: eI2C_Fail, eI2C_TIMEOUT or eI2C_OK.
+ * @retval  I2C status: eI2C_TIMEOUT or eI2C_OK.
  */
 static en_i2cStatus I2C_Transmit(uint8_t *pbuf, uint32_t length)
 {
@@ -760,7 +774,19 @@ static uint32_t FindI2CAddress(void)
             }
 
             // Send a stop condition to I2C bus and wait for stop condition to be generated
-            I2C_SendStopToBus();
+            // If we had a timeout when sending a STOP, the hardware seems to get confused and needs to be reset
+            // otherwise it never sees aXiom.
+            if (I2C_SendStopToBus() != eI2C_OK)
+            {
+                // Reset I2C hardware
+                i2c_disable(I2C_PERIPH);
+                i2c_deinit(I2C_PERIPH);
+
+                // Configure the peripheral settings
+                i2c_clock_config(I2C_PERIPH, I2C_FASTMODE, I2C_DTCY_2);
+                i2c_enable(I2C_PERIPH);
+                i2c_ack_config(I2C_PERIPH, I2C_ACK_ENABLE);
+            }
 
             if (addressFound == TRUE)
             {
