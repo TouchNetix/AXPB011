@@ -216,6 +216,7 @@ uint8_t DeviceInit(usb_core_driver *pDevice)
 void DeviceDeInit(usb_core_driver *pDevice, uint8_t disable_irq)
 {
     USB_FS_DeInit(pDevice);
+    delay_1ms(2000);
     CommsDeInit();
     GPIO_DeInit();
 
