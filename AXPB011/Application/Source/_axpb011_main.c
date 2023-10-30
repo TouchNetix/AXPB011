@@ -169,8 +169,6 @@ static void ProcessControlCommand(usb_core_driver *pDevice)
         {
             continue;
         }
-
-        memset(responseBuffer, 0x00, GENERIC_IN_PACKET_SIZE);
     }
 
     g_generic_fops.GenericCommandReceived = NO_CONTROL_COMMAND;
@@ -185,8 +183,6 @@ static void ProcessPressCommand(usb_core_driver *pDevice, uint8_t *usbPressBuffe
         {
             continue;
         }
-
-        memset(usbPressBuffer, 0x00, PRESS_IN_PACKET_SIZE);
     }
 
     g_press_fops.PressCommandReceived = NO_PRESS_COMMAND;
@@ -286,7 +282,6 @@ static void SendControlUSBMessage(usb_core_driver *pDevice, uint8_t *usbControlB
             continue;
         }
 
-        memset(usbControlBuffer, 0x00, GENERIC_IN_PACKET_SIZE);
         MoveCircularBufferTail();
 
         if (GetCircularBufferHead() == GetCircularBufferTail())
@@ -300,7 +295,6 @@ static void SendControlUSBMessage(usb_core_driver *pDevice, uint8_t *usbControlB
         // If we're reading proxy reports faster than they can be sent to the host, the circular buffer head will overtake the tail
         if (generic_hid_report_send(&g_composite_hid_device, usbControlBuffer, GENERIC_IN_PACKET_SIZE) == USBD_OK)
         {
-            memset(usbControlBuffer, 0x00, GENERIC_IN_PACKET_SIZE);
             MoveCircularBufferTail();
 
             if (GetCircularBufferHead() == GetCircularBufferTail())
@@ -317,7 +311,6 @@ static void SendPressUSBMessage(usb_core_driver *pDevice, uint8_t *usbPressBuffe
     // If USB interface is busy we don't want to clear the packet
     if (press_hid_report_send(&g_composite_hid_device, usbPressBuffer, PRESS_IN_PACKET_SIZE) == USBD_OK)
     {
-        memset(usbPressBuffer, 0x00, PRESS_IN_PACKET_SIZE);
         ClearPressUSBPacketReady();
     }
 }
@@ -327,7 +320,6 @@ static void SendDigitizerUSBMessage(usb_core_driver *pDevice, uint8_t *usbDigiti
     // If USB interface is busy we don't want to clear the packet
     if (digitizer_hid_report_send(&g_composite_hid_device, usbDigitizerBuffer, GetDigitizerReportLength()) == USBD_OK)
     {
-        memset(usbDigitizerBuffer, 0x00, DIGITIZER_IN_PACKET_SIZE);
         ClearDigitizerUSBPacketReady();
     }
 }
