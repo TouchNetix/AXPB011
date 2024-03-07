@@ -97,13 +97,12 @@ int main(void)
     uint8_t PressUSBReport[PRESS_IN_PACKET_SIZE]            = {0};
     uint8_t DigitizerUSBReport[DIGITIZER_IN_PACKET_SIZE]    = {0};
 
-    if (DeviceInit(&g_composite_hid_device) == USB_HOST_ABSENT)
+    uint8_t HostUSBState = DeviceInit(&g_composite_hid_device, RUN_INITIAL_SETUP);
+    while(HostUSBState == USB_HOST_ABSENT)
     {
-        for (;;)
-        {
-            // Do nothing, forever.
-            continue;
-        }
+        // Host wasn't detected, try again.
+        delay_1ms(500);
+        HostUSBState = DeviceInit(&g_composite_hid_device, SKIP_INITIAL_SETUP);
     }
 
     for (;;)

@@ -141,35 +141,29 @@ static void GPIO_DeInit(void);
 /*******************************************************************************
  * Exported Function Definitions
  ******************************************************************************/
-uint8_t DeviceInit(usb_core_driver *pDevice)
+uint8_t DeviceInit(usb_core_driver *pDevice, uint8_t SkipInitialSetup)
 {
     uint8_t status = USB_HOST_ABSENT;
 
-    // If we've done a software reset, we need to re-enable interrupts
-    __enable_irq();
+    // These bits must only be called once, subsequent calls to this function should skip the initial setup.
+    if (SkipInitialSetup == RUN_INITIAL_SETUP)
+    {
+        // If we've done a software reset, we need to re-enable interrupts
+        __enable_irq();
 
-    // Configure systick
-    systick_config();
+        // Configure systick
+        systick_config();
 
-    CheckBridgeMode(pDevice);
+        CheckBridgeMode(pDevice);
 
-    // Sets up nRESET, nIRQ and LEDs - we need nRESET to change the mode of axiom
-    GPIOConfig();
-    LEDsInit();
+        // Sets up nRESET, nIRQ - we need nRESET to change the mode of axiom
+        GPIOConfig();
+        LEDsInit();
+    }
 
-    // If no USB host is detected, put axiom in I2C mode then de-initialise all GPIOs and do nothing forever
     if ( CheckUSBHostPresence() == USB_HOST_ABSENT )
     {
-        // Still need to use GPIO port A
-        rcu_periph_clock_disable( RCU_GPIOB );
-        rcu_periph_clock_disable( RCU_GPIOC );
-        rcu_periph_clock_disable( RCU_DMA   );
-        gpio_deinit( GPIOA );
-        gpio_deinit( GPIOB );
-        gpio_deinit( GPIOC );
-
         // Don't release the nSLVI2C/MISO line - if the new host resets axiom it should remain in I2C mode
-        // TODO let go of nRESET
         SetAxiomCommsMode( I2C_MODE );
         status = USB_HOST_ABSENT;
     }
@@ -178,36 +172,42 @@ uint8_t DeviceInit(usb_core_driver *pDevice)
         status = USB_HOST_DETECTED;
     }
 
-    // Configure the rest of the peripherals and reset axiom to put it in the correct comms mode (during comms init)
-    TimerInit();
-    CommsInit();
-
-    enUsageTableState usagetable_status = enUsageTableEmpty;
-
-    // If we're in I2C mode and aXiom hasn't been found, don't bother trying to read the usage table.
-    // We've waited ~12s already, so just come up in Bridge Only mode (won't be able to read usage table anyway).
-    if ( ( GetCommsMode() == eSPI ) ||
-            ( ( GetCommsMode() == eI2C ) && ( GetAxiomI2CAddress() != 0) ) )
+    // Only continue to configure the bridge if the USB host was detected.
+    if (status == USB_HOST_DETECTED)
     {
-        usagetable_status = ParseUsageTable();
-    }
+        // Configure the rest of the peripherals and reset axiom to put it in the correct comms mode (during comms init)
+        TimerInit();
+        CommsInit();
 
-    // Return both LEDs to the same state
-    gpio_bit_write(LED_AXIOM_GPIO_PORT, LED_AXIOM_GPIO_PIN, RESET);
-    gpio_bit_write(LED_USB_GPIO_PORT, LED_USB_GPIO_PIN, RESET);
+        enUsageTableState usagetable_status = enUsageTableEmpty;
 
-    // Enable USB - happens last when everything else is set up (at this point we are ready to connect to the host)
-    USB_FS_Init( pDevice );
+        // If we're in I2C mode and aXiom hasn't been found, don't bother trying to read the usage table.
+        // We've waited ~12s already, so just come up in Bridge Only mode (won't be able to read usage table anyway).
+        if ( ( GetCommsMode() == eSPI ) ||
+                ( ( GetCommsMode() == eI2C ) && ( GetAxiomI2CAddress() != 0) ) )
+        {
+            usagetable_status = ParseUsageTable();
+        }
 
-    if ( usagetable_status == enUsageTableEmpty )
-    {
-        // Usage table couldn't be parsed, meaning axiom couldn't be connected to - no reports to read!
-        SetProxyMode( eProxyStop );
-    }
-    else
-    {
-        // Start the timer - enables ePressDigiProxy after ~1 second delay
-        StartProxyDelayTimer();
+        // Return both LEDs to the same state
+        gpio_bit_write(LED_AXIOM_GPIO_PORT, LED_AXIOM_GPIO_PIN, RESET);
+        gpio_bit_write(LED_USB_GPIO_PORT, LED_USB_GPIO_PIN, RESET);
+
+        delay_1ms(1000);
+
+        // Enable USB - happens last when everything else is set up (at this point we are ready to connect to the host)
+        USB_FS_Init( pDevice );
+
+        if ( usagetable_status == enUsageTableEmpty )
+        {
+            // Usage table couldn't be parsed, meaning axiom couldn't be connected to - no reports to read!
+            SetProxyMode( eProxyStop );
+        }
+        else
+        {
+            // Start the timer - enables ePressDigiProxy after ~1 second delay
+            StartProxyDelayTimer();
+        }
     }
 
     return status;
