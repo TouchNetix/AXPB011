@@ -52,6 +52,9 @@
 #define USB_HOST_DETECTED   (1U)
 #define USB_HOST_ABSENT     (0U)
 
+#define RUN_INITIAL_SETUP   (1U)
+#define SKIP_INITIAL_SETUP  (0U)
+
 /*******************************************************************************
  * Exported Variables
  ******************************************************************************/
@@ -63,7 +66,7 @@ extern digitizer_fop_handler    g_digitizer_fops;
 /*******************************************************************************
  * Exported Functions
  ******************************************************************************/
-uint8_t DeviceInit(usb_core_driver *pDevice);
+uint8_t DeviceInit(usb_core_driver *pDevice, uint8_t SkipInitialSetup);
 void DeviceDeInit(usb_core_driver *pDevice, uint8_t disable_irq);
 						   
 /*******************************************************************************
