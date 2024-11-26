@@ -171,7 +171,7 @@ __ALIGN_BEGIN usb_composite_desc_config_set composite_config_desc __ALIGN_END = 
         .bEndpointAddress     = GENERIC_HID_OUT_EP,
         .bmAttributes         = USB_EP_ATTR_INT,
         .wMaxPacketSize       = GENERIC_HID_OUT_PACKET_SIZE,
-        .bInterval            = 0x05    /* Polling interval in ms */
+        .bInterval            = 0x01    /* Polling interval in ms */
     },
 
     .press_interface =
@@ -227,7 +227,7 @@ __ALIGN_BEGIN usb_composite_desc_config_set composite_config_desc __ALIGN_END = 
         .bEndpointAddress     = PRESS_HID_OUT_EP,
         .bmAttributes         = USB_EP_ATTR_INT,
         .wMaxPacketSize       = PRESS_HID_OUT_PACKET_SIZE,
-        .bInterval            = 0x05    /* Polling interval in ms */
+        .bInterval            = 0x01    /* Polling interval in ms */
     },
 
     .digitizer_interface =
