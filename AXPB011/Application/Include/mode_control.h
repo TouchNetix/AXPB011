@@ -53,6 +53,7 @@
 #define MODE_TBP_BASIC              (0x00u)
 #define MODE_ABSOLUTE_MOUSE         (0x01u)
 #define MODE_PARALLEL_DIGITIZER     (0x03u)
+#define MODE_UNKNOWN                (0xFFu)
 
 /*******************************************************************************
  * Exported Variables
@@ -64,7 +65,8 @@
  ******************************************************************************/
 void CheckBridgeMode(usb_core_driver *udev);
 void WriteBridgeMode(usb_core_driver *udev, uint8_t bridge_mode);
-uint8_t ReadBridgeMode(void);
+uint8_t ReadBridgeModeFromFlash(void);
+uint8_t GetBridgeMode(void);
 						   
 /*******************************************************************************
  * Macros

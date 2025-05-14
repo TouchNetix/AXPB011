@@ -142,7 +142,7 @@ void PrepareDigitizerUSBReport(usb_dev *udev, uint8_t *pReport, uint8_t *pMsg)
 {
     if (CheckIfDigitizerUSBBlocked() == eDigitizerPacketsAllowed)
     {
-        switch (ReadBridgeMode())
+        switch (GetBridgeMode())
         {
             case MODE_PARALLEL_DIGITIZER:
             {
@@ -217,7 +217,7 @@ uint32_t GetDigitizerReportLength(void)
 {
     uint32_t length = 0;
 
-    switch (ReadBridgeMode())
+    switch (GetBridgeMode())
     {
         case MODE_PARALLEL_DIGITIZER:
         {

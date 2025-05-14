@@ -567,7 +567,7 @@ static uint8_t digitizer_hid_req_handler(usb_dev *udev, usb_req *req)
     case USB_GET_DESCRIPTOR:
         if (USB_DESCTYPE_REPORT == (req->wValue >> 8U))
         {
-            switch (ReadBridgeMode())
+            switch (GetBridgeMode())
             {
                 case MODE_PARALLEL_DIGITIZER:
                 {

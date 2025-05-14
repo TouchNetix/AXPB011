@@ -206,7 +206,7 @@ static void RunProxy(usb_dev *udev, uint8_t *USBControl, uint8_t *USBPress, uint
                 {
                     PreparePressUSBReport(ProxyReport, USBPress);
 
-                    if ((ReadBridgeMode() == MODE_PARALLEL_DIGITIZER) || (ReadBridgeMode() == MODE_ABSOLUTE_MOUSE))
+                    if ((GetBridgeMode() == MODE_PARALLEL_DIGITIZER) || (GetBridgeMode() == MODE_ABSOLUTE_MOUSE))
                     {
                         PrepareDigitizerUSBReport(udev, ProxyReport, USBDigitizer);
                     }
@@ -226,7 +226,7 @@ static void RunProxy(usb_dev *udev, uint8_t *USBControl, uint8_t *USBPress, uint
                 {
                     PreparePressUSBReport(ProxyReport, USBPress);
 
-                    if ((ReadBridgeMode() == MODE_PARALLEL_DIGITIZER) || (ReadBridgeMode() == MODE_ABSOLUTE_MOUSE))
+                    if ((GetBridgeMode() == MODE_PARALLEL_DIGITIZER) || (GetBridgeMode() == MODE_ABSOLUTE_MOUSE))
                     {
                         PrepareDigitizerUSBReport(udev, ProxyReport, USBDigitizer);
                     }

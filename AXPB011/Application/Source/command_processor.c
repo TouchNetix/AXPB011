@@ -515,7 +515,7 @@ uint8_t ProcessTBPCommand(usb_core_driver *udev, uint8_t *pResponse, uint8_t whi
         case CMD_GET_BRIDGE_MODE:
         {
             pResponse[0] = CMD_GET_BRIDGE_MODE;
-            pResponse[1] = ReadBridgeMode();
+            pResponse[1] = GetBridgeMode();
             response_required = RESPONSE_REQUIRED;
             break;
         }

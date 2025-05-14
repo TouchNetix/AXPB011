@@ -105,6 +105,7 @@ void HardFault_Handler(void)
     /* if Hard Fault exception occurs, go to infinite loop */
     while (1)
     {
+        RestartBridge(&g_composite_hid_device);
     }
 }
 
@@ -119,6 +120,7 @@ void MemManage_Handler(void)
     /* if Memory Manage exception occurs, go to infinite loop */
     while (1)
     {
+        RestartBridge(&g_composite_hid_device);
     }
 }
 
@@ -133,6 +135,7 @@ void BusFault_Handler(void)
     /* if Bus Fault exception occurs, go to infinite loop */
     while (1)
     {
+        RestartBridge(&g_composite_hid_device);
     }
 }
 
@@ -147,6 +150,7 @@ void UsageFault_Handler(void)
     /* if Usage Fault exception occurs, go to infinite loop */
     while (1)
     {
+        RestartBridge(&g_composite_hid_device);
     }
 }
 
