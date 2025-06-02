@@ -35,6 +35,7 @@
 #include "init.h"
 #include "proxy_driver.h"
 #include "timers_and_leds.h"
+#include "device_control.h"
 
 /*******************************************************************************
  * File Scope Conditional Compilation Flags
