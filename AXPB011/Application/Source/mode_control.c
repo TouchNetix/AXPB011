@@ -52,7 +52,7 @@
 /*******************************************************************************
  * File Scope Variables
  ******************************************************************************/
-
+uint8_t g_bridge_mode = MODE_UNKNOWN;
 
 /*******************************************************************************
  * File Scope Constants
@@ -83,9 +83,9 @@
  */
 void CheckBridgeMode(usb_core_driver *udev)
 {
-    uint8_t option_byte = ReadBridgeMode();
+    g_bridge_mode = ReadBridgeModeFromFlash();
 
-    if ((option_byte == MODE_TBP_BASIC) || (option_byte == MODE_ABSOLUTE_MOUSE) || (option_byte == MODE_PARALLEL_DIGITIZER))
+    if ((g_bridge_mode == MODE_TBP_BASIC) || (g_bridge_mode == MODE_ABSOLUTE_MOUSE) || (g_bridge_mode == MODE_PARALLEL_DIGITIZER))
     {
         // Do nothing
     }
@@ -116,12 +116,20 @@ void WriteBridgeMode(usb_core_driver *udev, uint8_t bridge_mode)
 }
 
 /**
- * @brief Returns the general bridge mode from the option byte.
+ * @brief Reads the general bridge mode from the option byte.
  * @return  Current bridge mode stored in option byte flash area.
  */
-uint8_t ReadBridgeMode(void)
+uint8_t ReadBridgeModeFromFlash(void)
 {
     return ReadOptionByte(BRIDGE_MODE_ADDR);
+}
+
+/**
+ * @brief Returns the general bridge mode.
+ */
+uint8_t GetBridgeMode(void)
+{
+    return g_bridge_mode;
 }
 
 /*******************************************************************************

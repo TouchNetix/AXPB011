@@ -425,7 +425,8 @@ static uint8_t hid_composite_init(usb_dev *udev, uint8_t config_index)
     usbd_generic_hid_cb.init(udev, config_index, &composite_config_desc.generic_epin, &composite_config_desc.generic_epout);
     usbd_press_hid_cb.init(udev, config_index, &composite_config_desc.press_epin, &composite_config_desc.press_epout);
 
-    uint8_t mode = ReadBridgeMode();
+    // TODO JC - reading the flash seems to be leading to a hardfault.
+    uint8_t mode = GetBridgeMode();
     if ((mode == MODE_ABSOLUTE_MOUSE) || (mode == MODE_PARALLEL_DIGITIZER))
     {
         usbd_digitizer_hid_cb.init(udev, config_index, &composite_config_desc.digitizer_epin, NULL);

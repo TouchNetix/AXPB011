@@ -458,7 +458,7 @@ static void USB_FS_DeInit(usb_core_driver *pDevice)
 
 static void ConfigureDescriptors(void)
 {
-    uint8_t bridge_mode = ReadBridgeMode();
+    uint8_t bridge_mode = GetBridgeMode();
 
     switch (bridge_mode)
     {
