@@ -74,7 +74,7 @@ static uint32_t g_axiom_i2c_addr = 0;
  ******************************************************************************/
 #define I2C_PERIPH      (I2C0)
 
-#define I2C_MAX_TIMEOUT_COUNT   (10U)
+#define I2C_MAX_TIMEOUT_COUNT   (5000U) /*25ms*/
 #define I2C_SLEEP_US            (5U)
 
 #define STATUS_OK       (0x00U)
